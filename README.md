@@ -21,16 +21,35 @@
 
 ```bash
 pkg update && pkg upgrade -y
+```
+
+```bash
 pkg install git python -y
+```
+
+```bash
 pip install flask requests
+```
+
+```bash
 git clone [https://github.com/liuyunyun1hao/yunyun2.git](https://github.com/liuyunyun1hao/yunyun2.git)
+```
+
+```bash
 cd yunyun2
+```
+
+```bash
 python proxy_server.py
+```
 
 提示：启动后，终端会变成一个全中文的交互菜单，输入 1 即可启动后台服务。
 2. 设置 Termux 每次打开自动启动
 为了不用每次进 Termux 都敲代码，你可以配置开机自启。在 Termux 终端输入以下命令回车即可：
+
+```bash
 echo 'if [ -z "$TMUX" ]; then cd ~/yunyun2 && python proxy_server.py; fi' >> ~/.bash_profile
+```
 
 3. 如何在 AI 软件中配置？
 服务启动后，打开你的手机浏览器，访问：http://127.0.0.1:5000，导入并勾选你要用的 Key。
