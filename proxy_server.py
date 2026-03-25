@@ -8,7 +8,7 @@ from flask import Flask, request, jsonify, Response
 import requests
 
 # === 当前本地版本号 ===
-VERSION = "3.3"
+VERSION = "3.4"
 
 app = Flask(__name__)
 DATA_FILE = "keys_data.json"
@@ -98,7 +98,7 @@ def proxy(path):
     except Exception as e:
         return jsonify({"error": f"代理失败: {str(e)}"}), 500
 
-# === 前端 UI ===
+# === 前端 UI (精简省略) ===
 HTML_CONTENT = """
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -240,9 +240,9 @@ if __name__ == "__main__":
         print("-" * 38)
         print("  1. 🚀 启动 API 代理")
         print("  2. 🛑 停止 API 代理")
-        print("  3. 🍻 部署/启动 傻酒馆 (SillyTavern)")
+        print("  3. 🍻 部署/启动 傻酒馆 (官方直连)")
         print("  4. 🍷 停止 傻酒馆")
-        print("  5. 🔄 一键更新 (代理与傻酒馆)")
+        print("  5. 🔄 一键更新代码")
         print("  0. 👋 退出控制台")
         print("="*38)
         
@@ -267,37 +267,28 @@ if __name__ == "__main__":
                 print("\n⚠️ 傻酒馆已在运行！浏览器访问: 127.0.0.1:8000")
             else:
                 if not os.path.exists(ST_DIR):
-                    print("\n📥 未检测到傻酒馆，正在自动化部署...")
+                    print("\n📥 准备部署傻酒馆...")
                     os.system("pkg install nodejs git -y")
                     
-                    print("📦 2/3 正在使用国内加速节点拉取仓库...")
-                    mirrors = [
-                        "https://kkgithub.com/SillyTavern/SillyTavern.git",
-                        "https://mirror.ghproxy.com/https://github.com/SillyTavern/SillyTavern.git",
-                        "https://github.moeyy.xyz/https://github.com/SillyTavern/SillyTavern.git"
-                    ]
+                    print("\n📦 正在连接 GitHub 官方仓库 (请确保梯子处于全局模式)...")
+                    # 使用官方地址
+                    ret = os.system(f"git clone https://github.com/SillyTavern/SillyTavern.git {ST_DIR}")
                     
-                    success = False
-                    for mirror in mirrors:
-                        print(f"🔄 正在尝试节点: {mirror}")
-                        ret = os.system(f"git clone {mirror} {ST_DIR}")
-                        if ret == 0 and os.path.exists(ST_DIR):
-                            success = True
-                            break
-                    
-                    if not success:
-                        print("\n❌ 糟糕，所有的国内加速节点都连不上！")
-                        print("👉 建议开启科学上网工具后，再按 3 重试。")
+                    if ret != 0 or not os.path.exists(ST_DIR):
+                        print("\n❌ 下载失败！可能是梯子被拦截，或者 Termux 没有走代理。")
+                        print("👉 建议：将梯子软件切换为【全局路由】模式后重试。")
                         input("\n按回车键返回菜单...")
-                        continue # 核心拦截！直接退回菜单，不再触发那堆报错
+                        continue
                         
-                    print("⏳ 3/3 首次安装依赖包 (可能需要几分钟)...")
-                    os.system(f"cd {ST_DIR} && npm install")
-                    print("\n✅ 部署完成！")
+                    print("\n⏳ 正在安装依赖包 (可能需要几分钟，请耐心等待)...")
+                    ret_npm = os.system(f"cd {ST_DIR} && npm install")
+                    if ret_npm != 0:
+                        print("\n⚠️ 依赖安装似乎遇到了网络波动，稍后你可以重新尝试启动。")
+                    else:
+                        print("\n✅ 部署完成！")
                 
-                # 再次安全检查：如果因为某些异常文件夹还是不在，彻底拦截
                 if not os.path.exists(ST_DIR):
-                    print("\n❌ 严重异常：找不到文件夹，启动终止。")
+                    print("\n❌ 文件夹不存在，无法启动。")
                     input("\n按回车键返回...")
                     continue
 
