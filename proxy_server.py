@@ -8,7 +8,7 @@ from flask import Flask, request, jsonify, Response
 import requests
 
 # === 当前本地版本号 ===
-VERSION = "3.1"
+VERSION = "3.3"
 
 app = Flask(__name__)
 DATA_FILE = "keys_data.json"
@@ -17,7 +17,7 @@ ST_PID_FILE = "st_server.pid"
 API_BASE = "https://api.siliconflow.cn/v1"
 ST_DIR = os.path.expanduser("~/SillyTavern")
 
-# === 自动版本检测 (双端) ===
+# === 自动版本检测 ===
 def check_proxy_update():
     try:
         url = "https://raw.githubusercontent.com/liuyunyun1hao/yunyun2/main/proxy_server.py"
@@ -39,15 +39,13 @@ def check_st_versions():
     try:
         url = "https://raw.githubusercontent.com/SillyTavern/SillyTavern/release/package.json"
         res = requests.get(url, timeout=3)
-        if res.status_code == 200:
-            remote_ver = res.json().get("version", "未知")
-    except:
-        remote_ver = "超时"
+        if res.status_code == 200: remote_ver = res.json().get("version", "未知")
+    except: remote_ver = "超时"
     
     status_msg = "✨ 发现更新" if (local_ver != "未安装" and local_ver != remote_ver and remote_ver != "超时") else "✅ 最新版"
     return local_ver, remote_ver, status_msg
 
-# === 数据管理与路由逻辑 (代理部分) ===
+# === 数据管理与路由 ===
 def load_data():
     if os.path.exists(DATA_FILE):
         try:
@@ -100,7 +98,7 @@ def proxy(path):
     except Exception as e:
         return jsonify({"error": f"代理失败: {str(e)}"}), 500
 
-# === 前端 UI (保持极简粉色不变) ===
+# === 前端 UI ===
 HTML_CONTENT = """
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -113,12 +111,12 @@ HTML_CONTENT = """
     <script src="https://unpkg.com/element-plus"></script>
     <style>
         :root { --theme-pink: #ff8fa3; --theme-pink-hover: #ff9fb1; --glass-bg: rgba(255, 255, 255, 0.65); --glass-border: rgba(255, 255, 255, 0.5); --text-main: #4a3b3e; --text-sub: #9c898c; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; background: linear-gradient(135deg, #fdf4f6 0%, #fbe1e6 100%); background-attachment: fixed; color: var(--text-main); margin: 0; padding: calc(env(safe-area-inset-top) + 16px) 16px calc(env(safe-area-inset-bottom) + 40px) 16px; }
+        body { font-family: -apple-system, sans-serif; background: linear-gradient(135deg, #fdf4f6 0%, #fbe1e6 100%); background-attachment: fixed; color: var(--text-main); margin: 0; padding: calc(env(safe-area-inset-top) + 16px) 16px calc(env(safe-area-inset-bottom) + 40px) 16px; }
         .app-container { max-width: 800px; margin: 0 auto; }
-        .segmented-control { display: flex; background: rgba(255, 255, 255, 0.4); border: 1px solid var(--glass-border); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-radius: 14px; padding: 4px; margin-bottom: 24px; }
+        .segmented-control { display: flex; background: rgba(255, 255, 255, 0.4); border: 1px solid var(--glass-border); backdrop-filter: blur(12px); border-radius: 14px; padding: 4px; margin-bottom: 24px; }
         .segment { flex: 1; text-align: center; padding: 10px 0; font-size: 14px; font-weight: 600; cursor: pointer; border-radius: 10px; color: var(--text-sub); transition: all 0.3s ease; }
         .segment.active { background: rgba(255, 255, 255, 0.9); color: var(--theme-pink); box-shadow: 0 2px 10px rgba(255, 143, 163, 0.15); }
-        .ios-card { background: var(--glass-bg); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid var(--glass-border); border-radius: 24px; padding: 24px; box-shadow: 0 10px 40px rgba(255, 143, 163, 0.1); margin-bottom: 24px; }
+        .ios-card { background: var(--glass-bg); backdrop-filter: blur(20px); border: 1px solid var(--glass-border); border-radius: 24px; padding: 24px; box-shadow: 0 10px 40px rgba(255, 143, 163, 0.1); margin-bottom: 24px; }
         .card-title { font-size: 20px; font-weight: 700; margin: 0 0 20px 0; display: flex; justify-content: space-between; align-items: center;}
         .el-button { border-radius: 12px !important; font-weight: 600 !important; border: none !important;}
         .el-button--primary { background-color: var(--theme-pink) !important; color: white !important; box-shadow: 0 4px 12px rgba(255, 143, 163, 0.3) !important; }
@@ -146,7 +144,7 @@ HTML_CONTENT = """
             <el-input type="textarea" v-model="batchKeys" placeholder="在此粘贴 Key，每行一个" :rows="3"></el-input>
             <div style="margin-top: 16px; display: flex; gap: 12px;">
                 <el-button type="primary" @click="importKeys">解析导入</el-button>
-                <el-button @click="checkAllBalances" :loading="checking" style="color: var(--theme-pink); background: rgba(255, 255, 255, 0.8);">刷新余额并排序</el-button>
+                <el-button @click="checkAllBalances" :loading="checking" style="color: var(--theme-pink); background: rgba(255, 255, 255, 0.8);">刷新余额</el-button>
             </div>
         </div>
         <div class="ios-card">
@@ -163,7 +161,7 @@ HTML_CONTENT = """
         <h2 class="card-title">⚡ 连通性测试</h2>
         <div v-if="!activeKey" style="color: #ff4d4f; text-align: center; font-weight: bold;">⚠️ 请先在【控制台】勾选一个 Key</div>
         <div v-else class="test-box">
-            <el-input type="textarea" v-model="testPrompt" placeholder="输入你想测试的内容..." :rows="3"></el-input>
+            <el-input type="textarea" v-model="testPrompt" placeholder="输入测试内容..." :rows="3"></el-input>
             <div style="margin-top: 16px; display: flex; gap: 10px;">
                 <el-button type="primary" @click="sendTest" :loading="isTesting">发送请求</el-button>
                 <el-button @click="testPrompt = ''; testResult = ''" style="background: rgba(255,255,255,0.8); color: var(--text-sub);">清空</el-button>
@@ -177,20 +175,20 @@ HTML_CONTENT = """
     createApp({
         setup() {
             const activeTab = ref('console'); const keys = ref([]), activeKey = ref(null), batchKeys = ref(''), checking = ref(false);
-            const testPrompt = ref('讲个简短的冷笑话。'), testResult = ref(''), isTesting = ref(false);
+            const testPrompt = ref('讲个冷笑话。'), testResult = ref(''), isTesting = ref(false);
             const loadData = async () => { const res = await fetch('/api/data'); const data = await res.json(); keys.value = data.keys || []; activeKey.value = data.active_key; };
             const saveData = async () => { const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keys: keys.value, active_key: activeKey.value }) }); const result = await res.json(); keys.value = result.data.keys; };
             const maskKey = (key) => key ? key.substring(0, 5) + '...' + key.substring(key.length - 4) : '';
             const importKeys = async () => {
                 const newKeys = batchKeys.value.split('\\n').map(k => k.trim()).filter(k => k.startsWith('sk-'));
-                if (newKeys.length === 0) return ElementPlus.ElMessage.warning('未检测到有效 Key');
+                if (newKeys.length === 0) return ElementPlus.ElMessage.warning('无效的 Key');
                 newKeys.forEach(k => { if (!keys.value.some(exist => exist.key === k)) keys.value.push({ key: k, balance: '未知' }); });
                 batchKeys.value = ''; await saveData(); ElementPlus.ElMessage.success('导入完成');
             };
             const deleteKey = async (index) => { if (keys.value[index].key === activeKey.value) activeKey.value = null; keys.value.splice(index, 1); await saveData(); };
-            const checkAllBalances = async () => { checking.value = true; for (let i = 0; i < keys.value.length; i++) { keys.value[i].balance = '...'; try { const res = await fetch('/api/check_balance', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: keys.value[i].key }) }); const data = await res.json(); keys.value[i].balance = data.balance; } catch (e) { keys.value[i].balance = '超时'; } } await saveData(); checking.value = false; ElementPlus.ElMessage.success('刷新并排序完成'); };
-            const copyText = (text) => { navigator.clipboard.writeText(text).then(() => ElementPlus.ElMessage.success('已复制代理地址')).catch(() => ElementPlus.ElMessage.error('复制失败')); };
-            const sendTest = async () => { if (!activeKey.value || !testPrompt.value.trim()) return; isTesting.value = true; testResult.value = '请求发送中...'; try { const response = await fetch('/v1/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: "Qwen/Qwen2.5-7B-Instruct", messages: [{ role: "user", content: testPrompt.value }] }) }); const data = await response.json(); testResult.value = data.choices ? data.choices[0].message.content : `错误: ${JSON.stringify(data)}`; } catch (error) { testResult.value = `请求失败: ${error.message}`; } finally { isTesting.value = false; } };
+            const checkAllBalances = async () => { checking.value = true; for (let i = 0; i < keys.value.length; i++) { keys.value[i].balance = '...'; try { const res = await fetch('/api/check_balance', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: keys.value[i].key }) }); const data = await res.json(); keys.value[i].balance = data.balance; } catch (e) { keys.value[i].balance = '超时'; } } await saveData(); checking.value = false; ElementPlus.ElMessage.success('排序完成'); };
+            const copyText = (text) => { navigator.clipboard.writeText(text).then(() => ElementPlus.ElMessage.success('已复制')).catch(() => ElementPlus.ElMessage.error('复制失败')); };
+            const sendTest = async () => { if (!activeKey.value || !testPrompt.value.trim()) return; isTesting.value = true; testResult.value = '请求发送中...'; try { const response = await fetch('/v1/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: "Qwen/Qwen2.5-7B-Instruct", messages: [{ role: "user", content: testPrompt.value }] }) }); const data = await response.json(); testResult.value = data.choices ? data.choices[0].message.content : `错误: ${JSON.stringify(data)}`; } catch (error) { testResult.value = `失败: ${error.message}`; } finally { isTesting.value = false; } };
             onMounted(() => loadData());
             return { activeTab, keys, activeKey, batchKeys, checking, testPrompt, testResult, isTesting, importKeys, checkAllBalances, deleteKey, maskKey, saveData, copyText, sendTest };
         }
@@ -223,7 +221,7 @@ if __name__ == "__main__":
         app.run(host="0.0.0.0", port=5000, use_reloader=False)
         sys.exit(0)
 
-    print("\n🔍 正在检测系统状态与代码版本，请稍候...")
+    print("\n🔍 正在检测代码版本，请稍候...")
     proxy_update_msg = check_proxy_update()
     st_local, st_remote, st_status_msg = check_st_versions()
 
@@ -245,41 +243,65 @@ if __name__ == "__main__":
         print("  3. 🍻 部署/启动 傻酒馆 (SillyTavern)")
         print("  4. 🍷 停止 傻酒馆")
         print("  5. 🔄 一键更新 (代理与傻酒馆)")
-        print("  0. 👋 退出控制台 (后台保持运行)")
+        print("  0. 👋 退出控制台")
         print("="*38)
         
         choice = input(" 请输入指令并回车: ").strip()
 
         if choice == "1":
-            if proxy_running: print("\n⚠️ 代理已经在运行中啦！")
+            if proxy_running: print("\n⚠️ 代理已运行！")
             else:
                 p = subprocess.Popen([sys.executable, __file__, "run_app"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 with open(PID_FILE, "w") as f: f.write(str(p.pid))
                 time.sleep(1)
-                print("\n✅ 代理启动成功！手机浏览器访问: 127.0.0.1:5000")
+                print("\n✅ 代理启动成功！浏览器访问: 127.0.0.1:5000")
             input("\n👉 按回车键返回...")
 
         elif choice == "2":
             if proxy_running: kill_process(PID_FILE); print("\n✅ 代理已停止。")
-            else: print("\n⚠️ 代理本来就是停止状态哦。")
+            else: print("\n⚠️ 代理本来就是停止状态。")
             input("\n👉 按回车键返回...")
 
         elif choice == "3":
             if st_running:
-                print("\n⚠️ 傻酒馆已经在运行中啦！浏览器访问: 127.0.0.1:8000")
+                print("\n⚠️ 傻酒馆已在运行！浏览器访问: 127.0.0.1:8000")
             else:
                 if not os.path.exists(ST_DIR):
-                    print("\n📥 未检测到傻酒馆，正在为你自动化部署...")
-                    print("⚙️  1/3 安装 Node.js 与 Git 环境...")
+                    print("\n📥 未检测到傻酒馆，正在自动化部署...")
                     os.system("pkg install nodejs git -y")
-                    print("📦 2/3 拉取官方仓库...")
-                    os.system(f"git clone https://github.com/SillyTavern/SillyTavern.git {ST_DIR}")
-                    print("⏳ 3/3 首次安装依赖包 (可能需要几分钟，请耐心等待)...")
+                    
+                    print("📦 2/3 正在使用国内加速节点拉取仓库...")
+                    mirrors = [
+                        "https://kkgithub.com/SillyTavern/SillyTavern.git",
+                        "https://mirror.ghproxy.com/https://github.com/SillyTavern/SillyTavern.git",
+                        "https://github.moeyy.xyz/https://github.com/SillyTavern/SillyTavern.git"
+                    ]
+                    
+                    success = False
+                    for mirror in mirrors:
+                        print(f"🔄 正在尝试节点: {mirror}")
+                        ret = os.system(f"git clone {mirror} {ST_DIR}")
+                        if ret == 0 and os.path.exists(ST_DIR):
+                            success = True
+                            break
+                    
+                    if not success:
+                        print("\n❌ 糟糕，所有的国内加速节点都连不上！")
+                        print("👉 建议开启科学上网工具后，再按 3 重试。")
+                        input("\n按回车键返回菜单...")
+                        continue # 核心拦截！直接退回菜单，不再触发那堆报错
+                        
+                    print("⏳ 3/3 首次安装依赖包 (可能需要几分钟)...")
                     os.system(f"cd {ST_DIR} && npm install")
-                    print("\n✅ 傻酒馆基础部署完成！")
+                    print("\n✅ 部署完成！")
                 
+                # 再次安全检查：如果因为某些异常文件夹还是不在，彻底拦截
+                if not os.path.exists(ST_DIR):
+                    print("\n❌ 严重异常：找不到文件夹，启动终止。")
+                    input("\n按回车键返回...")
+                    continue
+
                 print("\n🚀 正在后台启动傻酒馆...")
-                # 傻酒馆主程序为 server.js
                 p = subprocess.Popen(["node", "server.js"], cwd=ST_DIR, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 with open(ST_PID_FILE, "w") as f: f.write(str(p.pid))
                 time.sleep(3)
@@ -288,22 +310,15 @@ if __name__ == "__main__":
 
         elif choice == "4":
             if st_running: kill_process(ST_PID_FILE); print("\n✅ 傻酒馆已安全退出。")
-            else: print("\n⚠️ 傻酒馆并没有在运行。")
+            else: print("\n⚠️ 傻酒馆并未运行。")
             input("\n👉 按回车键返回...")
 
         elif choice == "5":
-            print("\n🔄 正在更新【API 代理】代码...")
+            print("\n🔄 更新代码中...")
             os.system("git pull")
-            
-            if os.path.exists(ST_DIR):
-                print("\n🔄 正在更新【傻酒馆】代码与依赖...")
-                os.system(f"cd {ST_DIR} && git pull && npm install")
-            else:
-                print("\n⚠️ 傻酒馆暂未部署，无需更新。")
-                
-            print("\n✅ 全局更新完毕！(如果程序已运行，请先停止再启动以生效)")
-            proxy_update_msg = check_proxy_update()
-            st_local, st_remote, st_status_msg = check_st_versions()
+            if os.path.exists(ST_DIR): os.system(f"cd {ST_DIR} && git pull && npm install")
+            print("\n✅ 全局更新完毕！(请重新启动生效)")
+            proxy_update_msg, st_local, st_remote, st_status_msg = check_proxy_update(), *check_st_versions()
             input("\n👉 按回车键返回...")
 
         elif choice == "0":
