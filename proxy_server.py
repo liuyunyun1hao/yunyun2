@@ -8,27 +8,46 @@ from flask import Flask, request, jsonify, Response
 import requests
 
 # === 当前本地版本号 ===
-VERSION = "3.0"
+VERSION = "3.1"
 
 app = Flask(__name__)
 DATA_FILE = "keys_data.json"
 PID_FILE = "server.pid"
+ST_PID_FILE = "st_server.pid"
 API_BASE = "https://api.siliconflow.cn/v1"
+ST_DIR = os.path.expanduser("~/SillyTavern")
 
-# === 自动版本检测 ===
-def check_update():
+# === 自动版本检测 (双端) ===
+def check_proxy_update():
     try:
-        # 读取你 GitHub 上的最新文件，对比版本号
         url = "https://raw.githubusercontent.com/liuyunyun1hao/yunyun2/main/proxy_server.py"
         res = requests.get(url, timeout=2)
-        if res.status_code == 200:
-            if f'VERSION = "{VERSION}"' not in res.text:
-                return "✨ 发现新版本！请在下方按 3 更新"
-        return "✅ 当前已是最新版"
-    except:
-        return "⚠️ 检测版本失败 (网络超时或未连接)"
+        if res.status_code == 200 and f'VERSION = "{VERSION}"' not in res.text:
+            return "✨ 发现新版"
+        return "✅ 已是最新"
+    except: return "⚠️ 检测失败"
 
-# === 数据管理与路由逻辑 ===
+def check_st_versions():
+    local_ver = "未安装"
+    if os.path.exists(os.path.join(ST_DIR, "package.json")):
+        try:
+            with open(os.path.join(ST_DIR, "package.json"), "r", encoding="utf-8") as f:
+                local_ver = json.load(f).get("version", "未知")
+        except: pass
+
+    remote_ver = "获取中..."
+    try:
+        url = "https://raw.githubusercontent.com/SillyTavern/SillyTavern/release/package.json"
+        res = requests.get(url, timeout=3)
+        if res.status_code == 200:
+            remote_ver = res.json().get("version", "未知")
+    except:
+        remote_ver = "超时"
+    
+    status_msg = "✨ 发现更新" if (local_ver != "未安装" and local_ver != remote_ver and remote_ver != "超时") else "✅ 最新版"
+    return local_ver, remote_ver, status_msg
+
+# === 数据管理与路由逻辑 (代理部分) ===
 def load_data():
     if os.path.exists(DATA_FILE):
         try:
@@ -62,7 +81,7 @@ def check_balance():
         if res.status_code == 200 and "data" in res.json():
             return jsonify({"balance": res.json()["data"].get("totalBalance", "获取失败")})
     except: pass
-    return jsonify({"balance": "错误/网络异常"})
+    return jsonify({"balance": "网络异常"})
 
 @app.route("/v1/<path:path>", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
 def proxy(path):
@@ -79,9 +98,9 @@ def proxy(path):
         resp_headers = [(n, v) for (n, v) in resp.raw.headers.items() if n.lower() not in ['content-encoding', 'content-length', 'transfer-encoding', 'connection']]
         return Response(resp.iter_content(chunk_size=1024), resp.status_code, resp_headers)
     except Exception as e:
-        return jsonify({"error": f"代理请求失败: {str(e)}"}), 500
+        return jsonify({"error": f"代理失败: {str(e)}"}), 500
 
-# === 淡粉色 iOS 毛玻璃前端页面 ===
+# === 前端 UI (保持极简粉色不变) ===
 HTML_CONTENT = """
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -93,67 +112,25 @@ HTML_CONTENT = """
     <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
     <script src="https://unpkg.com/element-plus"></script>
     <style>
-        :root { 
-            --theme-pink: #ff8fa3; 
-            --theme-pink-hover: #ff9fb1;
-            --glass-bg: rgba(255, 255, 255, 0.65); 
-            --glass-border: rgba(255, 255, 255, 0.5); 
-            --text-main: #4a3b3e; 
-            --text-sub: #9c898c; 
-        }
-        body { 
-            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; 
-            background: linear-gradient(135deg, #fdf4f6 0%, #fbe1e6 100%);
-            background-attachment: fixed;
-            color: var(--text-main); 
-            margin: 0; 
-            padding: calc(env(safe-area-inset-top) + 16px) 16px calc(env(safe-area-inset-bottom) + 40px) 16px; 
-            -webkit-font-smoothing: antialiased;
-        }
+        :root { --theme-pink: #ff8fa3; --theme-pink-hover: #ff9fb1; --glass-bg: rgba(255, 255, 255, 0.65); --glass-border: rgba(255, 255, 255, 0.5); --text-main: #4a3b3e; --text-sub: #9c898c; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; background: linear-gradient(135deg, #fdf4f6 0%, #fbe1e6 100%); background-attachment: fixed; color: var(--text-main); margin: 0; padding: calc(env(safe-area-inset-top) + 16px) 16px calc(env(safe-area-inset-bottom) + 40px) 16px; }
         .app-container { max-width: 800px; margin: 0 auto; }
-        
-        /* 毛玻璃分段控制器 */
-        .segmented-control { 
-            display: flex; 
-            background: rgba(255, 255, 255, 0.4); 
-            border: 1px solid var(--glass-border);
-            backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-            border-radius: 14px; padding: 4px; margin-bottom: 24px; 
-        }
+        .segmented-control { display: flex; background: rgba(255, 255, 255, 0.4); border: 1px solid var(--glass-border); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-radius: 14px; padding: 4px; margin-bottom: 24px; }
         .segment { flex: 1; text-align: center; padding: 10px 0; font-size: 14px; font-weight: 600; cursor: pointer; border-radius: 10px; color: var(--text-sub); transition: all 0.3s ease; }
         .segment.active { background: rgba(255, 255, 255, 0.9); color: var(--theme-pink); box-shadow: 0 2px 10px rgba(255, 143, 163, 0.15); }
-        
-        /* 毛玻璃卡片 */
-        .ios-card { 
-            background: var(--glass-bg); 
-            backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-            border: 1px solid var(--glass-border); 
-            border-radius: 24px; padding: 24px; 
-            box-shadow: 0 10px 40px rgba(255, 143, 163, 0.1); 
-            margin-bottom: 24px; 
-        }
-        .card-title { font-size: 20px; font-weight: 700; margin: 0 0 20px 0; color: var(--text-main); display: flex; justify-content: space-between; align-items: center;}
-        
-        /* Element Plus 样式覆盖 (粉色主题) */
+        .ios-card { background: var(--glass-bg); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid var(--glass-border); border-radius: 24px; padding: 24px; box-shadow: 0 10px 40px rgba(255, 143, 163, 0.1); margin-bottom: 24px; }
+        .card-title { font-size: 20px; font-weight: 700; margin: 0 0 20px 0; display: flex; justify-content: space-between; align-items: center;}
         .el-button { border-radius: 12px !important; font-weight: 600 !important; border: none !important;}
         .el-button--primary { background-color: var(--theme-pink) !important; color: white !important; box-shadow: 0 4px 12px rgba(255, 143, 163, 0.3) !important; }
         .el-button--primary:active { background-color: var(--theme-pink-hover) !important; transform: scale(0.98); }
-        
-        .el-input__wrapper, .el-textarea__inner { 
-            border-radius: 14px !important; 
-            background: rgba(255, 255, 255, 0.7) !important; 
-            box-shadow: 0 0 0 1px rgba(255, 143, 163, 0.2) inset !important; 
-        }
+        .el-input__wrapper, .el-textarea__inner { border-radius: 14px !important; background: rgba(255, 255, 255, 0.7) !important; box-shadow: 0 0 0 1px rgba(255, 143, 163, 0.2) inset !important; }
         .el-input__wrapper.is-focus, .el-textarea__inner:focus { box-shadow: 0 0 0 2px var(--theme-pink) inset !important; background: #fff !important; }
-        
         .el-table { border-radius: 16px; overflow: hidden; background: transparent !important; }
         .el-table tr, .el-table th.el-table__cell { background-color: rgba(255, 255, 255, 0.5) !important; color: var(--text-main); font-weight: 600; border-bottom: 1px solid rgba(255, 143, 163, 0.1) !important;}
         .el-table td.el-table__cell { border-bottom: 1px solid rgba(255, 143, 163, 0.1) !important; background: transparent !important;}
         .el-table--enable-row-hover .el-table__body tr:hover>td.el-table__cell { background-color: rgba(255, 255, 255, 0.8) !important; }
-        
         .el-radio__input.is-checked .el-radio__inner { border-color: var(--theme-pink) !important; background: var(--theme-pink) !important; }
         .el-radio__input.is-checked+.el-radio__label { color: var(--theme-pink) !important; }
-        
         .test-box { background: rgba(255, 255, 255, 0.4); padding: 16px; border-radius: 16px; margin-top: 16px; border: 1px solid var(--glass-border);}
     </style>
 </head>
@@ -163,7 +140,6 @@ HTML_CONTENT = """
         <div class="segment" :class="{active: activeTab === 'console'}" @click="activeTab = 'console'">控制台</div>
         <div class="segment" :class="{active: activeTab === 'test'}" @click="activeTab = 'test'">连接测试</div>
     </div>
-    
     <div v-show="activeTab === 'console'">
         <div class="ios-card">
             <h2 class="card-title">🌸 批量导入</h2>
@@ -174,28 +150,15 @@ HTML_CONTENT = """
             </div>
         </div>
         <div class="ios-card">
-            <h2 class="card-title">✨ 代理状态 
-                <el-button size="small" type="primary" @click="copyText('http://127.0.0.1:5000/v1')" style="box-shadow: none !important;">复制地址</el-button>
-            </h2>
+            <h2 class="card-title">✨ 代理状态 <el-button size="small" type="primary" @click="copyText('http://127.0.0.1:5000/v1')" style="box-shadow: none !important;">复制地址</el-button></h2>
             <el-table :data="keys" style="width: 100%" empty-text="暂无数据">
-                <el-table-column label="启用" width="60" align="center">
-                    <template #default="scope">
-                        <el-radio v-model="activeKey" :label="scope.row.key" @change="saveData"><span></span></el-radio>
-                    </template>
-                </el-table-column>
-                <el-table-column label="API Key" min-width="150">
-                    <template #default="scope">
-                        <span style="font-family: monospace; color: var(--text-sub);">{{ maskKey(scope.row.key) }}</span>
-                    </template>
-                </el-table-column>
+                <el-table-column label="启用" width="60" align="center"><template #default="scope"><el-radio v-model="activeKey" :label="scope.row.key" @change="saveData"><span></span></el-radio></template></el-table-column>
+                <el-table-column label="API Key" min-width="150"><template #default="scope"><span style="font-family: monospace; color: var(--text-sub);">{{ maskKey(scope.row.key) }}</span></template></el-table-column>
                 <el-table-column prop="balance" label="余额" width="80" align="center"></el-table-column>
-                <el-table-column label="操作" width="70" align="center">
-                    <template #default="scope"><el-button size="small" type="danger" text @click="deleteKey(scope.$index)">删除</el-button></template>
-                </el-table-column>
+                <el-table-column label="操作" width="70" align="center"><template #default="scope"><el-button size="small" type="danger" text @click="deleteKey(scope.$index)">删除</el-button></template></el-table-column>
             </el-table>
         </div>
     </div>
-
     <div v-show="activeTab === 'test'" class="ios-card">
         <h2 class="card-title">⚡ 连通性测试</h2>
         <div v-if="!activeKey" style="color: #ff4d4f; text-align: center; font-weight: bold;">⚠️ 请先在【控制台】勾选一个 Key</div>
@@ -213,10 +176,8 @@ HTML_CONTENT = """
     const { createApp, ref, onMounted } = Vue;
     createApp({
         setup() {
-            const activeTab = ref('console');
-            const keys = ref([]), activeKey = ref(null), batchKeys = ref(''), checking = ref(false);
+            const activeTab = ref('console'); const keys = ref([]), activeKey = ref(null), batchKeys = ref(''), checking = ref(false);
             const testPrompt = ref('讲个简短的冷笑话。'), testResult = ref(''), isTesting = ref(false);
-
             const loadData = async () => { const res = await fetch('/api/data'); const data = await res.json(); keys.value = data.keys || []; activeKey.value = data.active_key; };
             const saveData = async () => { const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keys: keys.value, active_key: activeKey.value }) }); const result = await res.json(); keys.value = result.data.keys; };
             const maskKey = (key) => key ? key.substring(0, 5) + '...' + key.substring(key.length - 4) : '';
@@ -227,24 +188,9 @@ HTML_CONTENT = """
                 batchKeys.value = ''; await saveData(); ElementPlus.ElMessage.success('导入完成');
             };
             const deleteKey = async (index) => { if (keys.value[index].key === activeKey.value) activeKey.value = null; keys.value.splice(index, 1); await saveData(); };
-            const checkAllBalances = async () => {
-                checking.value = true;
-                for (let i = 0; i < keys.value.length; i++) {
-                    keys.value[i].balance = '...';
-                    try { const res = await fetch('/api/check_balance', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: keys.value[i].key }) }); const data = await res.json(); keys.value[i].balance = data.balance; } catch (e) { keys.value[i].balance = '超时'; }
-                }
-                await saveData(); checking.value = false; ElementPlus.ElMessage.success('刷新并排序完成');
-            };
+            const checkAllBalances = async () => { checking.value = true; for (let i = 0; i < keys.value.length; i++) { keys.value[i].balance = '...'; try { const res = await fetch('/api/check_balance', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: keys.value[i].key }) }); const data = await res.json(); keys.value[i].balance = data.balance; } catch (e) { keys.value[i].balance = '超时'; } } await saveData(); checking.value = false; ElementPlus.ElMessage.success('刷新并排序完成'); };
             const copyText = (text) => { navigator.clipboard.writeText(text).then(() => ElementPlus.ElMessage.success('已复制代理地址')).catch(() => ElementPlus.ElMessage.error('复制失败')); };
-            const sendTest = async () => {
-                if (!activeKey.value || !testPrompt.value.trim()) return;
-                isTesting.value = true; testResult.value = '请求发送中...';
-                try {
-                    const response = await fetch('/v1/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: "Qwen/Qwen2.5-7B-Instruct", messages: [{ role: "user", content: testPrompt.value }] }) });
-                    const data = await response.json();
-                    testResult.value = data.choices ? data.choices[0].message.content : `错误: ${JSON.stringify(data)}`;
-                } catch (error) { testResult.value = `请求失败: ${error.message}`; } finally { isTesting.value = false; }
-            };
+            const sendTest = async () => { if (!activeKey.value || !testPrompt.value.trim()) return; isTesting.value = true; testResult.value = '请求发送中...'; try { const response = await fetch('/v1/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: "Qwen/Qwen2.5-7B-Instruct", messages: [{ role: "user", content: testPrompt.value }] }) }); const data = await response.json(); testResult.value = data.choices ? data.choices[0].message.content : `错误: ${JSON.stringify(data)}`; } catch (error) { testResult.value = `请求失败: ${error.message}`; } finally { isTesting.value = false; } };
             onMounted(() => loadData());
             return { activeTab, keys, activeKey, batchKeys, checking, testPrompt, testResult, isTesting, importKeys, checkAllBalances, deleteKey, maskKey, saveData, copyText, sendTest };
         }
@@ -254,14 +200,21 @@ HTML_CONTENT = """
 </html>
 """
 
-# === 终端交互菜单 ===
-def check_status():
-    if os.path.exists(PID_FILE):
+# === 终端进程控制模块 ===
+def check_status(pid_path):
+    if os.path.exists(pid_path):
         try:
-            with open(PID_FILE, "r") as f: os.kill(int(f.read().strip()), 0)
+            with open(pid_path, "r") as f: os.kill(int(f.read().strip()), 0)
             return True
-        except: os.remove(PID_FILE)
+        except: os.remove(pid_path)
     return False
+
+def kill_process(pid_path):
+    if os.path.exists(pid_path):
+        with open(pid_path, "r") as f:
+            try: os.kill(int(f.read().strip()), signal.SIGTERM)
+            except: pass
+        os.remove(pid_path)
 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "run_app":
@@ -270,51 +223,89 @@ if __name__ == "__main__":
         app.run(host="0.0.0.0", port=5000, use_reloader=False)
         sys.exit(0)
 
-    # 启动时自动检查版本
-    print("\n🔍 正在检测代码版本，请稍候...")
-    update_msg = check_update()
+    print("\n🔍 正在检测系统状态与代码版本，请稍候...")
+    proxy_update_msg = check_proxy_update()
+    st_local, st_remote, st_status_msg = check_st_versions()
 
     while True:
         os.system("clear")
-        print("\n" + "="*34)
-        print(" 🌸 YunYun API Proxy 控制台")
-        print("="*34)
+        print("\n" + "="*38)
+        print(" 🌸 YunYun AI 聚合控制台 v" + VERSION)
+        print("="*38)
         
-        is_running = check_status()
-        print(f" 状态: {'🟢 运行中 (127.0.0.1:5000)' if is_running else '🔴 已停止'}")
-        print(f" 版本: v{VERSION} | {update_msg}")
-        print("-" * 34)
-        print("  1. 🚀 启动代理服务")
-        print("  2. 🛑 停止代理服务")
-        print("  3. 🔄 从 GitHub 一键更新代码")
-        print("  0. 👋 退出控制台 (服务保持后台运行)")
-        print("="*34)
+        proxy_running = check_status(PID_FILE)
+        st_running = check_status(ST_PID_FILE)
         
-        choice = input(" 请输入数字并回车: ").strip()
+        print(f" [API代理] 状态: {'🟢 运行中 (5000)' if proxy_running else '🔴 已停止'} | {proxy_update_msg}")
+        print(f" [傻酒馆]  状态: {'🟢 运行中 (8000)' if st_running else '🔴 已停止'}")
+        print(f" [傻酒馆]  版本: 本地 {st_local} | 最新 {st_remote} ({st_status_msg})")
+        print("-" * 38)
+        print("  1. 🚀 启动 API 代理")
+        print("  2. 🛑 停止 API 代理")
+        print("  3. 🍻 部署/启动 傻酒馆 (SillyTavern)")
+        print("  4. 🍷 停止 傻酒馆")
+        print("  5. 🔄 一键更新 (代理与傻酒馆)")
+        print("  0. 👋 退出控制台 (后台保持运行)")
+        print("="*38)
+        
+        choice = input(" 请输入指令并回车: ").strip()
 
         if choice == "1":
-            if is_running: print("\n⚠️ 已经在运行中啦！")
+            if proxy_running: print("\n⚠️ 代理已经在运行中啦！")
             else:
                 p = subprocess.Popen([sys.executable, __file__, "run_app"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 with open(PID_FILE, "w") as f: f.write(str(p.pid))
                 time.sleep(1)
-                print("\n✅ 启动成功！快去手机浏览器打开 127.0.0.1:5000 吧。")
+                print("\n✅ 代理启动成功！手机浏览器访问: 127.0.0.1:5000")
             input("\n👉 按回车键返回...")
+
         elif choice == "2":
-            if is_running:
-                with open(PID_FILE, "r") as f:
-                    try: os.kill(int(f.read().strip()), signal.SIGTERM)
-                    except: pass
-                os.remove(PID_FILE)
-                print("\n✅ 代理已停止。")
-            else: print("\n⚠️ 本来就没有运行哦。")
+            if proxy_running: kill_process(PID_FILE); print("\n✅ 代理已停止。")
+            else: print("\n⚠️ 代理本来就是停止状态哦。")
             input("\n👉 按回车键返回...")
+
         elif choice == "3":
-            print("\n🔄 正在拉取最新代码...\n")
-            os.system("git pull")
-            print("\n✅ 更新完毕！(请按 2 停止后，再按 1 重启服务生效)")
-            update_msg = check_update() # 重新检测版本
+            if st_running:
+                print("\n⚠️ 傻酒馆已经在运行中啦！浏览器访问: 127.0.0.1:8000")
+            else:
+                if not os.path.exists(ST_DIR):
+                    print("\n📥 未检测到傻酒馆，正在为你自动化部署...")
+                    print("⚙️  1/3 安装 Node.js 与 Git 环境...")
+                    os.system("pkg install nodejs git -y")
+                    print("📦 2/3 拉取官方仓库...")
+                    os.system(f"git clone https://github.com/SillyTavern/SillyTavern.git {ST_DIR}")
+                    print("⏳ 3/3 首次安装依赖包 (可能需要几分钟，请耐心等待)...")
+                    os.system(f"cd {ST_DIR} && npm install")
+                    print("\n✅ 傻酒馆基础部署完成！")
+                
+                print("\n🚀 正在后台启动傻酒馆...")
+                # 傻酒馆主程序为 server.js
+                p = subprocess.Popen(["node", "server.js"], cwd=ST_DIR, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                with open(ST_PID_FILE, "w") as f: f.write(str(p.pid))
+                time.sleep(3)
+                print("✅ 傻酒馆已启动！请在浏览器访问: http://127.0.0.1:8000")
             input("\n👉 按回车键返回...")
+
+        elif choice == "4":
+            if st_running: kill_process(ST_PID_FILE); print("\n✅ 傻酒馆已安全退出。")
+            else: print("\n⚠️ 傻酒馆并没有在运行。")
+            input("\n👉 按回车键返回...")
+
+        elif choice == "5":
+            print("\n🔄 正在更新【API 代理】代码...")
+            os.system("git pull")
+            
+            if os.path.exists(ST_DIR):
+                print("\n🔄 正在更新【傻酒馆】代码与依赖...")
+                os.system(f"cd {ST_DIR} && git pull && npm install")
+            else:
+                print("\n⚠️ 傻酒馆暂未部署，无需更新。")
+                
+            print("\n✅ 全局更新完毕！(如果程序已运行，请先停止再启动以生效)")
+            proxy_update_msg = check_proxy_update()
+            st_local, st_remote, st_status_msg = check_st_versions()
+            input("\n👉 按回车键返回...")
+
         elif choice == "0":
             os.system("clear")
             sys.exit(0)
