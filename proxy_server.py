@@ -8,7 +8,7 @@ from flask import Flask, request, jsonify, Response
 import requests
 
 # === 当前本地版本号 ===
-VERSION = "3.5"
+VERSION = "3.6"
 
 app = Flask(__name__)
 DATA_FILE = "keys_data.json"
@@ -97,7 +97,7 @@ def proxy(path):
     except Exception as e:
         return jsonify({"error": f"代理失败: {str(e)}"}), 500
 
-# === 前端 UI (保持淡粉色 iOS 风格) ===
+# === 前端 UI ===
 HTML_CONTENT = """
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -248,7 +248,8 @@ if __name__ == "__main__":
         print("\n" + "─" * 32)
         print("  1. 启动代理    2. 停止代理")
         print("  3. 启动酒馆    4. 停止酒馆")
-        print("  5. 一键更新    0. 退出控制台")
+        print("  5. 一键更新    6. 自启教程")
+        print("  0. 退出控制台")
         print("─" * 32)
         
         choice = input(" 请输入数字指令: ").strip()
@@ -308,6 +309,18 @@ if __name__ == "__main__":
             print("\n✅ 更新完毕！(重启服务生效)")
             proxy_update_msg = check_proxy_update()
             st_local, st_remote = check_st_versions()
+            input("\n👉 按回车返回...")
+
+        elif choice == "6":
+            print("\n" + "─" * 32)
+            print(" 📖 【Termux 开机自启教程】")
+            print("─" * 32)
+            print(" Termux 默认是 Login Shell，请务必使用 .bash_profile")
+            print("\n 👉 请复制以下整段代码（直接长按选中），")
+            print(" 在主菜单按 0 退出后，粘贴并回车：\n")
+            print('echo \'if [ -z "$TMUX" ]; then cd ~/yunyun2 && python proxy_server.py; fi\' >> ~/.bash_profile')
+            print("source ~/.bash_profile")
+            print("\n ✅ 完成后，下次打开 Termux 就会自动弹出了！")
             input("\n👉 按回车返回...")
 
         elif choice == "0":
