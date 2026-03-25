@@ -8,7 +8,7 @@ from flask import Flask, request, jsonify, Response
 import requests
 
 # === 当前本地版本号 ===
-VERSION = "3.4"
+VERSION = "3.5"
 
 app = Flask(__name__)
 DATA_FILE = "keys_data.json"
@@ -23,9 +23,9 @@ def check_proxy_update():
         url = "https://raw.githubusercontent.com/liuyunyun1hao/yunyun2/main/proxy_server.py"
         res = requests.get(url, timeout=2)
         if res.status_code == 200 and f'VERSION = "{VERSION}"' not in res.text:
-            return "✨ 发现新版"
-        return "✅ 已是最新"
-    except: return "⚠️ 检测失败"
+            return "✨(有新版)"
+        return "✅(最新)"
+    except: return "⚠️(检测失败)"
 
 def check_st_versions():
     local_ver = "未安装"
@@ -35,15 +35,14 @@ def check_st_versions():
                 local_ver = json.load(f).get("version", "未知")
         except: pass
 
-    remote_ver = "获取中..."
+    remote_ver = "获取中"
     try:
         url = "https://raw.githubusercontent.com/SillyTavern/SillyTavern/release/package.json"
         res = requests.get(url, timeout=3)
         if res.status_code == 200: remote_ver = res.json().get("version", "未知")
     except: remote_ver = "超时"
     
-    status_msg = "✨ 发现更新" if (local_ver != "未安装" and local_ver != remote_ver and remote_ver != "超时") else "✅ 最新版"
-    return local_ver, remote_ver, status_msg
+    return local_ver, remote_ver
 
 # === 数据管理与路由 ===
 def load_data():
@@ -98,7 +97,7 @@ def proxy(path):
     except Exception as e:
         return jsonify({"error": f"代理失败: {str(e)}"}), 500
 
-# === 前端 UI (精简省略) ===
+# === 前端 UI (保持淡粉色 iOS 风格) ===
 HTML_CONTENT = """
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -198,7 +197,7 @@ HTML_CONTENT = """
 </html>
 """
 
-# === 终端进程控制模块 ===
+# === 终端进程控制与绝美 UI ===
 def check_status(pid_path):
     if os.path.exists(pid_path):
         try:
@@ -221,96 +220,95 @@ if __name__ == "__main__":
         app.run(host="0.0.0.0", port=5000, use_reloader=False)
         sys.exit(0)
 
-    print("\n🔍 正在检测代码版本，请稍候...")
+    print("\n🔍 正在获取状态，请稍候...")
     proxy_update_msg = check_proxy_update()
-    st_local, st_remote, st_status_msg = check_st_versions()
+    st_local, st_remote = check_st_versions()
 
     while True:
         os.system("clear")
-        print("\n" + "="*38)
-        print(" 🌸 YunYun AI 聚合控制台 v" + VERSION)
-        print("="*38)
+        print("\n╭──────────────────────────────╮")
+        print(f"  🌸 YunYun AI 控制台 [v{VERSION}]")
+        print("╰──────────────────────────────╯")
         
         proxy_running = check_status(PID_FILE)
         st_running = check_status(ST_PID_FILE)
         
-        print(f" [API代理] 状态: {'🟢 运行中 (5000)' if proxy_running else '🔴 已停止'} | {proxy_update_msg}")
-        print(f" [傻酒馆]  状态: {'🟢 运行中 (8000)' if st_running else '🔴 已停止'}")
-        print(f" [傻酒馆]  版本: 本地 {st_local} | 最新 {st_remote} ({st_status_msg})")
-        print("-" * 38)
-        print("  1. 🚀 启动 API 代理")
-        print("  2. 🛑 停止 API 代理")
-        print("  3. 🍻 部署/启动 傻酒馆 (官方直连)")
-        print("  4. 🍷 停止 傻酒馆")
-        print("  5. 🔄 一键更新代码")
-        print("  0. 👋 退出控制台")
-        print("="*38)
+        # API 代理区块
+        print("\n🔑 【API 本地代理】")
+        print(f" 状态: {'🟢 运行中' if proxy_running else '🔴 已停止'}  {proxy_update_msg}")
+        print(" 🔗 网页: http://127.0.0.1:5000")
         
-        choice = input(" 请输入指令并回车: ").strip()
+        # 傻酒馆区块
+        print("\n🍻 【傻酒馆 SillyTavern】")
+        print(f" 状态: {'🟢 运行中' if st_running else '🔴 已停止'}")
+        print(f" 版本: {st_local}(本地) | {st_remote}(最新)")
+        print(" 🔗 网页: http://127.0.0.1:8000")
+        
+        # 简约双列菜单
+        print("\n" + "─" * 32)
+        print("  1. 启动代理    2. 停止代理")
+        print("  3. 启动酒馆    4. 停止酒馆")
+        print("  5. 一键更新    0. 退出控制台")
+        print("─" * 32)
+        
+        choice = input(" 请输入数字指令: ").strip()
 
         if choice == "1":
-            if proxy_running: print("\n⚠️ 代理已运行！")
+            if proxy_running: print("\n⚠️ 代理已在运行！")
             else:
                 p = subprocess.Popen([sys.executable, __file__, "run_app"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 with open(PID_FILE, "w") as f: f.write(str(p.pid))
                 time.sleep(1)
-                print("\n✅ 代理启动成功！浏览器访问: 127.0.0.1:5000")
-            input("\n👉 按回车键返回...")
+                print("\n✅ 启动成功！")
+            input("\n👉 按回车返回...")
 
         elif choice == "2":
             if proxy_running: kill_process(PID_FILE); print("\n✅ 代理已停止。")
-            else: print("\n⚠️ 代理本来就是停止状态。")
-            input("\n👉 按回车键返回...")
+            else: print("\n⚠️ 代理未运行。")
+            input("\n👉 按回车返回...")
 
         elif choice == "3":
             if st_running:
-                print("\n⚠️ 傻酒馆已在运行！浏览器访问: 127.0.0.1:8000")
+                print("\n⚠️ 傻酒馆已在运行！")
             else:
                 if not os.path.exists(ST_DIR):
                     print("\n📥 准备部署傻酒馆...")
                     os.system("pkg install nodejs git -y")
-                    
-                    print("\n📦 正在连接 GitHub 官方仓库 (请确保梯子处于全局模式)...")
-                    # 使用官方地址
+                    print("\n📦 连接 GitHub 拉取代码 (需全局代理)...")
                     ret = os.system(f"git clone https://github.com/SillyTavern/SillyTavern.git {ST_DIR}")
                     
                     if ret != 0 or not os.path.exists(ST_DIR):
-                        print("\n❌ 下载失败！可能是梯子被拦截，或者 Termux 没有走代理。")
-                        print("👉 建议：将梯子软件切换为【全局路由】模式后重试。")
-                        input("\n按回车键返回菜单...")
+                        print("\n❌ 下载失败！请确认梯子处于【全局模式】。")
+                        input("\n按回车返回...")
                         continue
                         
-                    print("\n⏳ 正在安装依赖包 (可能需要几分钟，请耐心等待)...")
-                    ret_npm = os.system(f"cd {ST_DIR} && npm install")
-                    if ret_npm != 0:
-                        print("\n⚠️ 依赖安装似乎遇到了网络波动，稍后你可以重新尝试启动。")
-                    else:
-                        print("\n✅ 部署完成！")
+                    print("\n⏳ 正在安装依赖包...")
+                    os.system(f"cd {ST_DIR} && npm install")
+                    print("\n✅ 部署完成！")
                 
                 if not os.path.exists(ST_DIR):
-                    print("\n❌ 文件夹不存在，无法启动。")
-                    input("\n按回车键返回...")
                     continue
 
-                print("\n🚀 正在后台启动傻酒馆...")
+                print("\n🚀 启动傻酒馆中...")
                 p = subprocess.Popen(["node", "server.js"], cwd=ST_DIR, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 with open(ST_PID_FILE, "w") as f: f.write(str(p.pid))
                 time.sleep(3)
-                print("✅ 傻酒馆已启动！请在浏览器访问: http://127.0.0.1:8000")
-            input("\n👉 按回车键返回...")
+                print("✅ 启动成功！")
+            input("\n👉 按回车返回...")
 
         elif choice == "4":
-            if st_running: kill_process(ST_PID_FILE); print("\n✅ 傻酒馆已安全退出。")
-            else: print("\n⚠️ 傻酒馆并未运行。")
-            input("\n👉 按回车键返回...")
+            if st_running: kill_process(ST_PID_FILE); print("\n✅ 傻酒馆已退出。")
+            else: print("\n⚠️ 傻酒馆未运行。")
+            input("\n👉 按回车返回...")
 
         elif choice == "5":
-            print("\n🔄 更新代码中...")
+            print("\n🔄 正在拉取代码更新...")
             os.system("git pull")
             if os.path.exists(ST_DIR): os.system(f"cd {ST_DIR} && git pull && npm install")
-            print("\n✅ 全局更新完毕！(请重新启动生效)")
-            proxy_update_msg, st_local, st_remote, st_status_msg = check_proxy_update(), *check_st_versions()
-            input("\n👉 按回车键返回...")
+            print("\n✅ 更新完毕！(重启服务生效)")
+            proxy_update_msg = check_proxy_update()
+            st_local, st_remote = check_st_versions()
+            input("\n👉 按回车返回...")
 
         elif choice == "0":
             os.system("clear")
