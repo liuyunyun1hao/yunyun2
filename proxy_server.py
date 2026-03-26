@@ -1,37 +1,121 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+YunYun AI 代理服务 v3.8
+支持硅基流动API代理、傻酒馆管理、智能密钥轮询、日志与备份等
+"""
+
 import os
-import json
 import sys
-import subprocess
-import signal
+import json
 import time
-import logging
+import signal
 import socket
+import logging
+import logging.handlers
+import subprocess
+import argparse
+import base64
+from pathlib import Path
+from threading import Lock
 from flask import Flask, request, jsonify, Response
 import requests
 
-# === 配置 ===
-VERSION = "3.7"                     # 当前版本号
-DATA_FILE = "keys_data.json"        # 存储API密钥的文件
-PID_FILE = "server.pid"             # 代理进程PID文件
-ST_PID_FILE = "st_server.pid"       # 酒馆进程PID文件
+# 尝试导入加密库（可选）
+try:
+    from cryptography.fernet import Fernet
+    CRYPTO_AVAILABLE = True
+except ImportError:
+    CRYPTO_AVAILABLE = False
+
+# ========== 配置 ==========
+VERSION = "3.8"
+DATA_FILE = "keys_data.json"
+PID_FILE = "server.pid"
+ST_PID_FILE = "st_server.pid"
 API_BASE = "https://api.siliconflow.cn/v1"
 ST_DIR = os.path.expanduser("~/SillyTavern")
-PORT = 5000                         # 代理服务端口
-ST_PORT = 8000                      # 酒馆默认端口
+PORT = 5000
+ST_PORT = 8000
+LOG_FILE = "proxy.log"
+LOG_MAX_BYTES = 10 * 1024 * 1024  # 10MB
+LOG_BACKUP_COUNT = 3
+BACKUP_DIR = "backups"
+ENCRYPT_KEY_FILE = "encrypt.key"  # 如果启用加密，会生成此文件
 
-# 日志配置
-logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+# 故障转移配置
+RETRY_COUNT = 2           # 最多尝试几个Key
+REQUEST_TIMEOUT = (5, 60) # (连接超时, 读取超时)
 
-app = Flask(__name__)
+# ========== 日志设置 ==========
+logger = logging.getLogger("YunYunProxy")
+logger.setLevel(logging.INFO)
+# 文件日志（带轮转）
+file_handler = logging.handlers.RotatingFileHandler(
+    LOG_FILE, maxBytes=LOG_MAX_BYTES, backupCount=LOG_BACKUP_COUNT
+)
+file_handler.setFormatter(logging.Formatter(
+    '[%(asctime)s] %(levelname)s - %(message)s'
+))
+logger.addHandler(file_handler)
+# 控制台日志（仅错误）
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.ERROR)
+console_handler.setFormatter(logging.Formatter('%(message)s'))
+logger.addHandler(console_handler)
 
-# === 辅助函数 ===
+# ========== 辅助函数 ==========
+def get_encrypt_key():
+    """获取或生成加密密钥"""
+    if not CRYPTO_AVAILABLE:
+        return None
+    key_file = Path(ENCRYPT_KEY_FILE)
+    if key_file.exists():
+        with open(key_file, 'rb') as f:
+            return f.read()
+    else:
+        key = Fernet.generate_key()
+        with open(key_file, 'wb') as f:
+            f.write(key)
+        logger.info("已生成新的加密密钥，请妥善保管 %s" % ENCRYPT_KEY_FILE)
+        return key
+
+def encrypt_data(data):
+    """加密数据（字符串）"""
+    key = get_encrypt_key()
+    if key is None:
+        return data
+    try:
+        cipher = Fernet(key)
+        return cipher.encrypt(data.encode()).decode()
+    except Exception as e:
+        logger.error(f"加密失败: {e}")
+        return data
+
+def decrypt_data(data):
+    """解密数据"""
+    key = get_encrypt_key()
+    if key is None:
+        return data
+    try:
+        cipher = Fernet(key)
+        return cipher.decrypt(data.encode()).decode()
+    except:
+        return data
+
 def load_data():
-    """加载密钥数据，确保结构完整"""
+    """加载密钥数据，支持加密"""
     if os.path.exists(DATA_FILE):
         try:
             with open(DATA_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
+                raw = f.read()
+                # 尝试解密（如果开启了加密）
+                if raw.startswith("enc:"):
+                    decrypted = decrypt_data(raw[4:])
+                    data = json.loads(decrypted)
+                else:
+                    data = json.loads(raw)
+                # 确保结构完整
                 if "keys" not in data:
                     data["keys"] = []
                 if "active_key" not in data:
@@ -42,26 +126,31 @@ def load_data():
     return {"keys": [], "active_key": None}
 
 def save_data(data):
-    """保存数据，按余额排序（数值小的优先）"""
+    """保存数据，支持加密，并按余额排序"""
+    # 排序：余额低的优先（便于自动选择）
     def get_balance_val(item):
         try:
             bal = item.get("balance", "0")
-            # 处理可能的字符串（如 "1.23" 或 "未知"）
             if isinstance(bal, (int, float)):
                 return bal
             if isinstance(bal, str):
-                # 尝试转换为浮点数
                 try:
                     return float(bal)
-                except ValueError:
+                except:
                     return float('inf')
             return float('inf')
         except:
             return float('inf')
-
     data["keys"] = sorted(data["keys"], key=get_balance_val)
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+    json_str = json.dumps(data, indent=2, ensure_ascii=False)
+    # 如果开启了加密
+    if CRYPTO_AVAILABLE and os.path.exists(ENCRYPT_KEY_FILE):
+        encrypted = "enc:" + encrypt_data(json_str)
+        with open(DATA_FILE, "w", encoding="utf-8") as f:
+            f.write(encrypted)
+    else:
+        with open(DATA_FILE, "w", encoding="utf-8") as f:
+            f.write(json_str)
 
 def check_port(port):
     """检查端口是否被占用"""
@@ -69,23 +158,22 @@ def check_port(port):
     try:
         sock.bind(('127.0.0.1', port))
         sock.close()
-        return False   # 端口空闲
-    except socket.error:
-        return True    # 端口被占用
+        return False
+    except:
+        return True
 
 def kill_process(pid_file):
-    """安全终止进程并删除PID文件"""
+    """安全终止进程"""
     if os.path.exists(pid_file):
         try:
             with open(pid_file, "r") as f:
                 pid = int(f.read().strip())
                 os.kill(pid, signal.SIGTERM)
                 time.sleep(0.5)
-                # 如果进程还存在，强制杀死
                 try:
                     os.kill(pid, 0)
                     os.kill(pid, signal.SIGKILL)
-                except OSError:
+                except:
                     pass
         except Exception as e:
             logger.warning(f"终止进程失败: {e}")
@@ -105,20 +193,18 @@ def is_running(pid_file):
             os.kill(pid, 0)
             return True
     except:
-        # PID文件无效，删除它
         try:
             os.remove(pid_file)
         except:
             pass
         return False
 
-# === 版本检测 ===
+# ========== 版本检测 ==========
 def check_proxy_update():
     try:
         url = "https://raw.githubusercontent.com/liuyunyun1hao/yunyun2/main/proxy_server.py"
         res = requests.get(url, timeout=3)
         if res.status_code == 200:
-            # 简单查找版本号
             if f'VERSION = "{VERSION}"' not in res.text:
                 return "✨(有新版本)"
             else:
@@ -136,7 +222,6 @@ def check_st_versions():
                 local_ver = data.get("version", "未知")
         except:
             pass
-
     remote_ver = "获取中"
     try:
         url = "https://raw.githubusercontent.com/SillyTavern/SillyTavern/release/package.json"
@@ -145,10 +230,11 @@ def check_st_versions():
             remote_ver = res.json().get("version", "未知")
     except:
         remote_ver = "超时"
-
     return local_ver, remote_ver
 
-# === API 路由 ===
+# ========== Flask 应用 ==========
+app = Flask(__name__)
+
 @app.route("/")
 def index():
     return HTML_CONTENT
@@ -157,7 +243,6 @@ def index():
 def manage_data():
     if request.method == "POST":
         data = request.json
-        # 确保数据结构正确
         if "keys" not in data:
             data["keys"] = []
         if "active_key" not in data:
@@ -180,72 +265,144 @@ def check_balance():
         if resp.status_code == 200:
             data = resp.json()
             balance = data.get("data", {}).get("totalBalance", "获取失败")
-            # 确保返回字符串便于显示
             if isinstance(balance, (int, float)):
                 balance = f"{balance:.2f}"
             return jsonify({"balance": balance})
         else:
-            logger.warning(f"余额查询失败: {resp.status_code} - {resp.text}")
+            logger.warning(f"余额查询失败: {resp.status_code}")
             return jsonify({"balance": "查询失败"})
     except Exception as e:
         logger.error(f"余额检查异常: {e}")
         return jsonify({"balance": "网络异常"})
 
+@app.route("/api/export_backup", methods=["GET"])
+def export_backup():
+    """导出当前数据为文件"""
+    data = load_data()
+    # 临时移除敏感信息（如需脱敏可在此处理）
+    return jsonify(data)
+
+@app.route("/api/import_backup", methods=["POST"])
+def import_backup():
+    """导入备份数据"""
+    try:
+        data = request.json
+        if "keys" not in data:
+            data["keys"] = []
+        if "active_key" not in data:
+            data["active_key"] = None
+        save_data(data)
+        return jsonify({"status": "success"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+
 @app.route("/v1/<path:path>", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
 def proxy(path):
+    """
+    智能代理：支持故障转移，自动切换Key
+    """
     data = load_data()
-    active_key = data.get("active_key")
-    if not active_key:
-        return jsonify({"error": "未选择活动 Key"}), 400
+    keys = data.get("keys", [])
+    if not keys:
+        return jsonify({"error": "未配置任何 API Key"}), 400
 
-    # 构建请求头，过滤掉 host 和 authorization
-    headers = {}
-    for k, v in request.headers:
-        if k.lower() not in ['host', 'authorization']:
-            headers[k] = v
-    headers["Authorization"] = f"Bearer {active_key}"
-
-    # 判断是否为流式请求
-    is_stream = False
+    # 获取请求的模型（用于日志）
+    model = "unknown"
     if request.is_json:
         json_data = request.get_json()
-        is_stream = json_data.get("stream", False)
+        model = json_data.get("model", "unknown")
+    is_stream = request.is_json and json_data.get("stream", False)
 
-    try:
-        # 转发请求
-        resp = requests.request(
-            method=request.method,
-            url=f"{API_BASE}/{path}",
-            headers=headers,
-            data=request.get_data(),
-            stream=is_stream,
-            timeout=(5, 60)  # (连接超时, 读取超时)
-        )
-        # 构造响应头，排除某些自动处理的头
-        excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
-        response_headers = [(name, value) for name, value in resp.raw.headers.items()
-                            if name.lower() not in excluded_headers]
+    # 记录请求开始时间
+    start_time = time.time()
 
-        # 流式响应直接使用生成器
-        if is_stream:
-            return Response(resp.iter_content(chunk_size=1024),
-                            status=resp.status_code,
-                            headers=response_headers)
-        else:
-            # 非流式直接返回内容
-            return Response(resp.content,
-                            status=resp.status_code,
-                            headers=response_headers,
-                            content_type=resp.headers.get('content-type'))
+    # 尝试顺序：当前选中的Key（如果存在）放在最前面，然后按余额排序的其余Key
+    active_key_val = data.get("active_key")
+    ordered_keys = []
+    # 先添加当前激活的Key（如果存在且有效）
+    if active_key_val:
+        for k in keys:
+            if k["key"] == active_key_val:
+                ordered_keys.append(k)
+                break
+    # 添加其余Key（按余额排序）
+    for k in keys:
+        if k["key"] != active_key_val:
+            ordered_keys.append(k)
 
-    except requests.exceptions.Timeout:
-        logger.error("代理请求超时")
-        return jsonify({"error": "请求上游超时"}), 504
-    except Exception as e:
-        logger.error(f"代理错误: {e}")
-        return jsonify({"error": f"代理失败: {str(e)}"}), 500
+    # 构建基础请求头
+    base_headers = {}
+    for k, v in request.headers:
+        if k.lower() not in ['host', 'authorization']:
+            base_headers[k] = v
 
-# === 前端 HTML（改进版） ===
+    last_error = None
+    for attempt_idx, key_item in enumerate(ordered_keys[:RETRY_COUNT]):
+        current_key = key_item["key"]
+        headers = base_headers.copy()
+        headers["Authorization"] = f"Bearer {current_key}"
+
+        try:
+            resp = requests.request(
+                method=request.method,
+                url=f"{API_BASE}/{path}",
+                headers=headers,
+                data=request.get_data(),
+                stream=is_stream,
+                timeout=REQUEST_TIMEOUT
+            )
+            # 记录日志（非流式响应）
+            elapsed = (time.time() - start_time) * 1000
+            log_msg = f"PROXY {request.method} /{path} -> {resp.status_code} | Key: {mask_key(current_key)} | Model: {model} | Time: {elapsed:.0f}ms"
+            if resp.status_code >= 500:
+                logger.warning(log_msg)
+            else:
+                logger.info(log_msg)
+
+            # 如果响应状态码为 4xx（尤其是 401/403/429），尝试切换Key
+            if resp.status_code in (401, 403, 429):
+                logger.warning(f"Key {mask_key(current_key)} 返回 {resp.status_code}，尝试下一个")
+                last_error = resp.status_code
+                continue
+
+            # 构造响应头
+            excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
+            response_headers = [(name, value) for name, value in resp.raw.headers.items()
+                                if name.lower() not in excluded_headers]
+
+            if is_stream:
+                return Response(resp.iter_content(chunk_size=1024),
+                                status=resp.status_code,
+                                headers=response_headers)
+            else:
+                return Response(resp.content,
+                                status=resp.status_code,
+                                headers=response_headers,
+                                content_type=resp.headers.get('content-type'))
+
+        except requests.exceptions.Timeout:
+            logger.warning(f"Key {mask_key(current_key)} 超时，尝试下一个")
+            last_error = "timeout"
+            continue
+        except Exception as e:
+            logger.error(f"代理错误 (Key {mask_key(current_key)}): {e}")
+            last_error = str(e)
+            continue
+
+    # 所有Key都失败
+    error_msg = f"所有可用Key均失败，最后错误: {last_error}"
+    logger.error(error_msg)
+    return jsonify({"error": error_msg}), 500
+
+def mask_key(key):
+    """隐藏密钥中间部分"""
+    if not key:
+        return ""
+    if len(key) <= 8:
+        return "***"
+    return key[:5] + "..." + key[-4:]
+
+# ========== 前端 HTML（增强版） ==========
 HTML_CONTENT = """
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -279,6 +436,7 @@ HTML_CONTENT = """
         .test-box { background: rgba(255, 255, 255, 0.4); padding: 16px; border-radius: 16px; margin-top: 16px; border: 1px solid var(--glass-border);}
         .add-key-area { margin-top: 20px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
         .add-key-area .el-input { flex: 1; min-width: 200px; }
+        .backup-area { margin-top: 16px; display: flex; gap: 12px; justify-content: flex-end; }
     </style>
 </head>
 <body>
@@ -286,6 +444,7 @@ HTML_CONTENT = """
     <div class="segmented-control">
         <div class="segment" :class="{active: activeTab === 'console'}" @click="activeTab = 'console'">控制台</div>
         <div class="segment" :class="{active: activeTab === 'test'}" @click="activeTab = 'test'">连接测试</div>
+        <div class="segment" :class="{active: activeTab === 'backup'}" @click="activeTab = 'backup'">备份/恢复</div>
     </div>
     <div v-show="activeTab === 'console'">
         <div class="ios-card">
@@ -322,6 +481,17 @@ HTML_CONTENT = """
             <el-input v-if="testResult" type="textarea" v-model="testResult" :rows="6" readonly style="margin-top: 16px;"></el-input>
         </div>
     </div>
+    <div v-show="activeTab === 'backup'" class="ios-card">
+        <h2 class="card-title">💾 备份与恢复</h2>
+        <div class="backup-area">
+            <el-button type="primary" @click="exportData">导出当前配置</el-button>
+            <el-button type="primary" @click="triggerImport">从文件恢复</el-button>
+            <input type="file" ref="fileInput" style="display:none" @change="importFile">
+        </div>
+        <div style="margin-top: 20px; font-size: 12px; color: var(--text-sub);">
+            <p>提示：导出文件为JSON格式，可手动编辑后重新导入。请谨慎操作，导入将覆盖现有配置。</p>
+        </div>
+    </div>
 </div>
 <script>
     const { createApp, ref, onMounted } = Vue;
@@ -336,6 +506,7 @@ HTML_CONTENT = """
             const testPrompt = ref('讲个冷笑话。');
             const testResult = ref('');
             const isTesting = ref(false);
+            const fileInput = ref(null);
 
             const loadData = async () => {
                 const res = await fetch('/api/data');
@@ -412,7 +583,6 @@ HTML_CONTENT = """
                     } catch (e) {
                         keys.value[i].balance = '请求失败';
                     }
-                    // 每检查完一个就保存一次，避免中断丢失
                     await saveData();
                 }
                 checking.value = false;
@@ -458,6 +628,47 @@ HTML_CONTENT = """
                     isTesting.value = false;
                 }
             };
+            const exportData = async () => {
+                const res = await fetch('/api/export_backup');
+                const data = await res.json();
+                const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `yunyun_backup_${new Date().toISOString().slice(0,19)}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+                ElementPlus.ElMessage.success('导出成功');
+            };
+            const triggerImport = () => {
+                fileInput.value.click();
+            };
+            const importFile = async (event) => {
+                const file = event.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = async (e) => {
+                    try {
+                        const data = JSON.parse(e.target.result);
+                        const res = await fetch('/api/import_backup', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(data)
+                        });
+                        const result = await res.json();
+                        if (result.status === 'success') {
+                            await loadData();
+                            ElementPlus.ElMessage.success('恢复成功');
+                        } else {
+                            ElementPlus.ElMessage.error('恢复失败: ' + (result.message || '未知错误'));
+                        }
+                    } catch (err) {
+                        ElementPlus.ElMessage.error('文件解析失败');
+                    }
+                    fileInput.value.value = '';
+                };
+                reader.readAsText(file);
+            };
 
             onMounted(loadData);
             return {
@@ -470,6 +681,7 @@ HTML_CONTENT = """
                 testPrompt,
                 testResult,
                 isTesting,
+                fileInput,
                 importKeys,
                 addSingleKey,
                 checkAllBalances,
@@ -477,7 +689,10 @@ HTML_CONTENT = """
                 maskKey,
                 saveData,
                 copyText,
-                sendTest
+                sendTest,
+                exportData,
+                triggerImport,
+                importFile
             };
         }
     }).use(ElementPlus).mount('#app');
@@ -486,7 +701,7 @@ HTML_CONTENT = """
 </html>
 """
 
-# === 控制台菜单（改进版） ===
+# ========== 控制台菜单 ==========
 def show_menu():
     proxy_update = check_proxy_update()
     st_local, st_remote = check_st_versions()
@@ -526,7 +741,7 @@ def start_proxy():
         )
         with open(PID_FILE, "w") as f:
             f.write(str(p.pid))
-        # 等待服务启动（最多5秒）
+        # 等待服务启动
         for _ in range(10):
             if not check_port(PORT):
                 print("\n✅ 代理启动成功！")
@@ -563,7 +778,6 @@ def start_sillytavern():
             return
         print("✅ 部署完成！")
     else:
-        # 如果已存在，尝试更新依赖
         print("\n⏳ 检查依赖更新...")
         os.system(f"cd {ST_DIR} && npm install 2>/dev/null")
 
@@ -577,7 +791,6 @@ def start_sillytavern():
         )
         with open(ST_PID_FILE, "w") as f:
             f.write(str(p.pid))
-        # 等待启动
         for _ in range(10):
             if not check_port(ST_PORT):
                 print("✅ 傻酒馆启动成功！")
@@ -612,14 +825,54 @@ def show_autostart_help():
     print("\n ✅ 完成后，下次打开 Termux 就会自动弹出了！")
     input("\n👉 按回车返回...")
 
-# === 主程序入口 ===
-if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "run_app":
+# ========== 命令行入口 ==========
+def main():
+    parser = argparse.ArgumentParser(description="YunYun AI 代理服务")
+    parser.add_argument("command", nargs="?", help="启动命令: start | start-st | stop | stop-st | run-app")
+    parser.add_argument("--daemon", action="store_true", help="后台运行（仅适用于 start 系列）")
+    args = parser.parse_args()
+
+    # 命令行模式
+    if args.command == "run_app":
         # 作为后台服务运行
         app.run(host="0.0.0.0", port=PORT, use_reloader=False, debug=False)
         sys.exit(0)
 
-    # 控制台菜单循环
+    if args.command == "start":
+        if args.daemon:
+            # 启动代理并后台化（通过fork）
+            if os.fork() == 0:
+                # 子进程
+                start_proxy()
+                sys.exit(0)
+            else:
+                print("代理已在后台启动，PID文件:", PID_FILE)
+                sys.exit(0)
+        else:
+            start_proxy()
+            sys.exit(0)
+
+    if args.command == "start-st":
+        if args.daemon:
+            if os.fork() == 0:
+                start_sillytavern()
+                sys.exit(0)
+            else:
+                print("傻酒馆已在后台启动，PID文件:", ST_PID_FILE)
+                sys.exit(0)
+        else:
+            start_sillytavern()
+            sys.exit(0)
+
+    if args.command == "stop":
+        stop_proxy()
+        sys.exit(0)
+
+    if args.command == "stop-st":
+        stop_sillytavern()
+        sys.exit(0)
+
+    # 无参数则进入交互菜单
     while True:
         show_menu()
         choice = input(" 请输入数字指令: ").strip()
@@ -640,5 +893,8 @@ if __name__ == "__main__":
             sys.exit(0)
         else:
             print("\n⚠️ 无效选项，请重试。")
-        if choice not in ["5", "6"]:  # 更新和教程已自带等待
+        if choice not in ["5", "6"]:
             input("\n👉 按回车返回...")
+
+if __name__ == "__main__":
+    main()
