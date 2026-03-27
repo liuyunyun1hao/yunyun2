@@ -1,159 +1,221 @@
 🌸 YunYun AI 代理服务
 
-https://img.shields.io/badge/version-3.8-brightgreen
-https://img.shields.io/badge/license-MIT-blue
-
-YunYun AI 代理服务是一个轻量级代理工具，主要用于为 硅基流动（SiliconFlow）API 提供统一接入、智能密钥轮询与故障转移，同时支持一键管理 SillyTavern（傻酒馆） 的启动与停止。
-项目内置 Web 管理面板，支持密钥批量导入、余额查询、备份恢复等功能，尤其适合在 Termux 或 Linux 服务器 上长期运行。
+YunYun Proxy 是一个轻量级、开箱即用的 API 代理工具，专为 硅基流动（SiliconFlow） API 设计，支持智能密钥轮询、故障转移、余额管理，并附带一个简洁的 Web 管理面板。
+同时内置了 SillyTavern（傻酒馆） 的一键管理功能，让你在手机上也能轻松部署和使用大模型服务。
 
 ---
 
-✨ 主要功能
+✨ 功能特点
 
-· 🔑 智能密钥代理
-    支持多 API Key 自动轮询，请求失败（401/403/429/超时）时自动切换，保障服务稳定。
-· 📊 Web 管理面板
-    可视化管理密钥列表，支持余额查询、批量导入、手动添加、备份恢复。
-· ⚙️ SillyTavern 一键管理
-    集成傻酒馆的自动部署、启动与停止，无需手动配置 Node.js 环境。
-· 🔒 数据加密存储（可选）
-    可对保存的密钥进行加密，防止明文泄露。
-· 🚀 Termux 友好
-    提供一键自启配置脚本，适合在 Android 设备上长期运行。
+· 🔑 多 API Key 管理 – 支持导入、删除、一键刷新余额，并自动按余额排序。
+· 🔄 智能故障转移 – 自动尝试下一个可用的 Key，避免服务中断。
+· 🌐 Web 管理面板 – 可视化管理密钥、测试连通性、导入/导出备份。
+· 🍻 SillyTavern 集成 – 一键安装、启动、停止傻酒馆，并检测版本更新。
+· 💾 数据加密存储 – 可选加密 keys_data.json，提升安全性。
+· 📱 Termux 优化 – 支持在 Android 手机上运行，并提供开机自启教程。
 
 ---
 
-📦 部署与启动
+🚀 部署指南（面向新手）
 
-1️⃣ 环境要求
+以下步骤以 Termux（Android） 为例，如果你在 Linux / macOS 上使用，原理相同。
 
-· Python 3.7+
-· pip（安装依赖）
-· 可选：cryptography（用于数据加密）
+1️⃣ 安装 Termux 并配置基础环境
 
-2️⃣ 克隆项目
+1. 从 F-Droid 下载并安装 Termux（不要用 Google Play 的旧版）。
+2. 打开 Termux，运行以下命令更新软件包：
+   ```bash
+   pkg update -y && pkg upgrade -y
+   ```
+3. 授予 Termux 存储权限（可选，用于备份）：
+   ```bash
+   termux-setup-storage
+   ```
+
+2️⃣ 安装必要依赖
+
+```bash
+pkg install python git nodejs -y
+```
+
+· python – 运行代理服务
+· git – 克隆代码仓库
+· nodejs – 运行 SillyTavern（如果需要）
+
+3️⃣ 克隆项目
 
 ```bash
 git clone https://github.com/liuyunyun1hao/yunyun2.git
 cd yunyun2
 ```
 
-3️⃣ 安装依赖
+4️⃣ 安装 Python 依赖
 
 ```bash
 pip install flask requests cryptography
 ```
 
-若无需加密，可不安装 cryptography
+说明：cryptography 是可选的，如果不需要加密功能可以跳过，但推荐安装。
 
-4️⃣ 启动服务
+5️⃣ 启动代理服务
 
-方式一：交互菜单（推荐）
+方式一：交互式菜单（推荐新手）
 
 ```bash
 python proxy_server.py
 ```
 
-进入菜单后：
+你会看到一个图形化菜单：
 
-· 输入 1 启动代理（后台运行）
-· 输入 3 启动傻酒馆（自动部署）
+```
+╭──────────────────────────────╮
+  🌸 YunYun AI 控制台 [v3.8]
+╰──────────────────────────────╯
 
-方式二：直接后台运行
+🔑 【API 本地代理】
+ 状态: 🔴 已停止  ✅(最新)
+ 🔗 网页: http://127.0.0.1:5000
+
+🍻 【傻酒馆 SillyTavern】
+ 状态: 🔴 已停止
+ 版本: 未安装(本地) | 未知(最新)
+ 🔗 网页: http://127.0.0.1:8000
+
+────────────────────────────────
+  1. 启动代理    2. 停止代理
+  3. 启动酒馆    4. 停止酒馆
+  5. 一键更新    6. 自启教程
+  0. 退出控制台
+────────────────────────────────
+ 请输入数字指令: 
+```
+
+· 输入 1 即可启动代理（后台运行）。
+· 启动成功后，打开手机浏览器访问 http://127.0.0.1:5000 进入管理面板。
+
+方式二：直接后台启动
 
 ```bash
-python proxy_server.py start --daemon   # 启动代理
-python proxy_server.py start-st --daemon # 启动傻酒馆
-python proxy_server.py stop              # 停止代理
-python proxy_server.py stop-st           # 停止傻酒馆
+python proxy_server.py start --daemon
 ```
 
----
+· 代理会在后台运行，PID 写入 server.pid。
+· 停止代理：python proxy_server.py stop
 
-🌐 使用说明
+6️⃣ 添加 API Key
 
-代理地址
+1. 在浏览器中打开 http://127.0.0.1:5000
+2. 在 控制台 页面：
+   · 批量导入：每行一个 sk-xxx 格式的 Key，点击「解析导入」。
+   · 手动添加：输入单个 Key 后点「添加」。
+3. 点击「刷新余额」可以自动查询每个 Key 的余额。
+4. 在表格中勾选一个 Key 作为当前使用的活动 Key。
 
-· API 端点：http://127.0.0.1:5000/v1
-· Web 管理面板：http://127.0.0.1:5000
+7️⃣ （可选）启动 SillyTavern
 
-在 SillyTavern 中配置
+在菜单中输入 3，程序会自动：
 
-1. 打开傻酒馆 → API 连接设置
-2. 选择 Chat Completion 接口
-3. 填入代理地址：http://127.0.0.1:5000/v1
-4. 无需填写 API Key（由代理自动轮询）
-5. 模型选择如 Qwen/Qwen2.5-7B-Instruct 等
+· 检查并安装 nodejs、git
+· 克隆 SillyTavern 到 ~/SillyTavern
+· 安装依赖并启动服务
 
-管理面板功能
+启动后访问 http://127.0.0.1:8000 即可进入傻酒馆界面。
 
-· 控制台：查看/添加/删除密钥，设置默认 Key，批量导入
-· 连接测试：选择活动 Key，发送测试对话
-· 备份/恢复：导出或导入配置文件（JSON 格式）
-
----
-
-📁 文件说明
-
-文件 说明
-proxy_server.py 主程序（含 Web 代理 + 管理界面）
-keys_data.json 密钥存储文件（可加密）
-encrypt.key 加密密钥（自动生成，需妥善保管）
-proxy.log 运行日志（自动轮转）
-backups/ 手动备份目录（通过面板导出）
-server.pid 代理进程 PID
-st_server.pid 傻酒馆进程 PID
+💡 提示：傻酒馆首次启动较慢，请耐心等待。
+如果端口冲突，可以修改脚本中的 ST_PORT 变量。
 
 ---
 
-🔧 高级配置
+🛠️ 使用管理面板
 
-修改端口
+控制台
 
-编辑 proxy_server.py 中的 PORT 和 ST_PORT 变量：
+· 批量导入 Key：粘贴多行 sk-xxx 格式的密钥，一键导入。
+· 手动添加：单独添加单个 Key。
+· 刷新余额：遍历所有 Key 查询余额并排序（余额低的优先）。
+· 启用 Key：在表格中点击单选框，选中当前使用的 Key。
 
-```python
-PORT = 5000        # 代理端口
-ST_PORT = 8000     # 傻酒馆端口
-```
+连接测试
 
-调整故障转移策略
+· 选择一个已启用的 Key。
+· 输入测试内容（默认“讲个冷笑话”）。
+· 点击「发送请求」，会调用 /v1/chat/completions 接口，返回模型的回答。
+· 可以验证代理是否工作正常。
 
-```python
-RETRY_COUNT = 2        # 失败后最多尝试的 Key 数量
-REQUEST_TIMEOUT = (5, 60)  # (连接超时, 读取超时)
-```
+备份/恢复
 
-开启数据加密
-
-程序首次启动时若检测到 cryptography 已安装，会自动生成 encrypt.key 并对 keys_data.json 加密。
-⚠️ 请务必备份 encrypt.key，否则数据将无法恢复！
+· 导出当前配置：下载 keys_data.json 的备份文件。
+· 从文件恢复：选择之前导出的 JSON 文件，恢复所有 Key 和激活状态。
 
 ---
 
-🛠 Termux 自启教程（可选）
+📂 文件说明
 
-1. 在 Termux 中运行以下命令（确保已安装 python 和 git）：
+文件 作用
+proxy_server.py 主程序
+keys_data.json 存储 API Key 和余额（可加密）
+encrypt.key 加密密钥（若启用加密）
+server.pid 代理服务的进程 ID
+st_server.pid SillyTavern 的进程 ID
+proxy.log 运行日志（自动轮转，保留 3 个 10MB）
+backups/ 手动备份目录（可自行创建）
+
+---
+
+❓ 常见问题
+
+1. 启动代理时提示端口被占用？
+
+· 可能已有代理在运行，先用 2 停止再重试。
+· 或者手动杀掉占用 5000 端口的进程：
+  ```bash
+  lsof -i :5000  # 查看PID
+  kill -9 <PID>
+  ```
+
+2. 余额查询失败 / 网络异常？
+
+· 检查手机网络，确保能访问 api.siliconflow.cn。
+· 如果使用代理或 VPN，尝试关闭后再试。
+
+3. 傻酒馆无法启动？
+
+· 手动进入 ~/SillyTavern 目录，运行 node server.js 查看具体错误。
+· 常见原因：端口冲突（8000 被占用）、依赖未安装完整。
+
+4. 如何设置开机自启？
+
+在 Termux 菜单中按 6 会显示自启教程，核心是编辑 ~/.bash_profile 添加以下内容：
 
 ```bash
-echo 'if [ -z "$TMUX" ]; then cd ~/yunyun2 && python proxy_server.py; fi' >> ~/.bash_profile
-source ~/.bash_profile
+if [ -z "$TMUX" ]; then
+    cd ~/yunyun2 && python proxy_server.py
+fi
 ```
 
-1. 下次打开 Termux 时，程序会自动进入交互菜单，输入 1 即可后台运行代理。
+保存后重启 Termux 即可自动进入控制台。
+
+5. 如何更新程序？
+
+· 在交互菜单中按 5 一键更新（会拉取最新代码并更新傻酒馆依赖）。
+· 或者手动执行：
+  ```bash
+  git pull
+  cd ~/SillyTavern && git pull && npm install
+  ```
 
 ---
 
-🤝 贡献与反馈
+📜 版本历史
 
-欢迎提交 Issue 或 Pull Request，帮助改进项目。
-
----
-
-📄 许可证
-
-本项目基于 MIT 协议开源，详情见 LICENSE 文件。
+· v3.8 – 增加加密存储、余额排序、智能故障转移，优化移动端适配。
+· 更早版本 – 基础代理功能、傻酒馆管理。
 
 ---
 
-Made with ❤️ by liuyunyun1hao
+🧑‍💻 写在最后
+
+YunYun 代理服务旨在让手机也能轻松使用大模型 API，并降低多 Key 管理的复杂度。
+如果你觉得这个项目有用，欢迎 ⭐ 支持一下，也欢迎提交 Issue 或 PR 一起改进！
+
+免责声明：本项目仅供学习交流，请勿用于非法用途。API Key 请妥善保管。
