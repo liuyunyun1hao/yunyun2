@@ -459,9 +459,13 @@ HTML_CONTENT = """
                 <el-button type="primary" @click="addSingleKey">添加</el-button>
             </div>
         </div>
-        <div class="ios-card">
-            <h2 class="card-title">✨ 代理状态 <el-button size="small" type="primary" @click="copyText('http://127.0.0.1:5000/v1')" style="box-shadow: none !important;">复制地址</el-button></h2>
+                <div class="ios-card">
+            <h2 class="card-title">
+                <span>✨ 代理状态 <span style="font-size: 14px; color: var(--theme-pink); margin-left: 10px; font-weight: normal;">总余额: {{ totalBalance }}</span></span>
+                <el-button size="small" type="primary" @click="copyText('http://127.0.0.1:5000/v1')" style="box-shadow: none !important;">复制地址</el-button>
+            </h2>
             <el-table :data="keys" style="width: 100%" empty-text="暂无数据">
+
                 <el-table-column label="启用" width="60" align="center"><template #default="scope"><el-radio v-model="activeKey" :label="scope.row.key" @change="saveData"><span></span></el-radio></template></el-table-column>
                 <el-table-column label="API Key" min-width="150"><template #default="scope"><span style="font-family: monospace; color: var(--text-sub);">{{ maskKey(scope.row.key) }}</span></template></el-table-column>
                 <el-table-column prop="balance" label="余额" width="100" align="center"></el-table-column>
@@ -494,12 +498,27 @@ HTML_CONTENT = """
     </div>
 </div>
 <script>
-    const { createApp, ref, onMounted } = Vue;
+    const { createApp, ref, computed, onMounted } = Vue;
     createApp({
         setup() {
             const activeTab = ref('console');
             const keys = ref([]);
             const activeKey = ref(null);
+            
+            // 计算总余额的自动响应逻辑
+            const totalBalance = computed(() => {
+                let total = 0;
+                let valid = false;
+                keys.value.forEach(k => {
+                    const val = parseFloat(k.balance);
+                    if (!isNaN(val)) {
+                        total += val;
+                        valid = true;
+                    }
+                });
+                return valid ? total.toFixed(2) : '未知';
+            });
+
             const batchKeys = ref('');
             const singleKey = ref('');
             const checking = ref(false);
@@ -672,6 +691,7 @@ HTML_CONTENT = """
 
             onMounted(loadData);
             return {
+                totalBalance,
                 activeTab,
                 keys,
                 activeKey,
