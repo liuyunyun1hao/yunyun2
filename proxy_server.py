@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-YunYun AI 代理服务 v3.8
+YunYun AI 代理服务 v3.8 (支持局域网访问版)
 支持硅基流动API代理、傻酒馆管理、智能密钥轮询、日志与备份等
 """
 
@@ -29,7 +29,7 @@ except ImportError:
     CRYPTO_AVAILABLE = False
 
 # ========== 配置 ==========
-VERSION = "3.8"
+VERSION = "3.8-LAN"
 DATA_FILE = "keys_data.json"
 PID_FILE = "server.pid"
 ST_PID_FILE = "st_server.pid"
@@ -162,6 +162,18 @@ def check_port(port):
     except:
         return True
 
+def get_local_ip():
+    """获取设备在局域网中的IP地址"""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        # 尝试连接一个外部地址，不会真正发包，但能获取路由分配的本地IP
+        s.connect(('8.8.8.8', 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "127.0.0.1"
+
 def kill_process(pid_file):
     """安全终止进程"""
     if os.path.exists(pid_file):
@@ -279,7 +291,6 @@ def check_balance():
 def export_backup():
     """导出当前数据为文件"""
     data = load_data()
-    # 临时移除敏感信息（如需脱敏可在此处理）
     return jsonify(data)
 
 @app.route("/api/import_backup", methods=["POST"])
@@ -306,31 +317,25 @@ def proxy(path):
     if not keys:
         return jsonify({"error": "未配置任何 API Key"}), 400
 
-    # 获取请求的模型（用于日志）
     model = "unknown"
     if request.is_json:
         json_data = request.get_json()
         model = json_data.get("model", "unknown")
     is_stream = request.is_json and json_data.get("stream", False)
 
-    # 记录请求开始时间
     start_time = time.time()
 
-    # 尝试顺序：当前选中的Key（如果存在）放在最前面，然后按余额排序的其余Key
     active_key_val = data.get("active_key")
     ordered_keys = []
-    # 先添加当前激活的Key（如果存在且有效）
     if active_key_val:
         for k in keys:
             if k["key"] == active_key_val:
                 ordered_keys.append(k)
                 break
-    # 添加其余Key（按余额排序）
     for k in keys:
         if k["key"] != active_key_val:
             ordered_keys.append(k)
 
-    # 构建基础请求头
     base_headers = {}
     for k, v in request.headers:
         if k.lower() not in ['host', 'authorization']:
@@ -351,7 +356,6 @@ def proxy(path):
                 stream=is_stream,
                 timeout=REQUEST_TIMEOUT
             )
-            # 记录日志（非流式响应）
             elapsed = (time.time() - start_time) * 1000
             log_msg = f"PROXY {request.method} /{path} -> {resp.status_code} | Key: {mask_key(current_key)} | Model: {model} | Time: {elapsed:.0f}ms"
             if resp.status_code >= 500:
@@ -359,13 +363,11 @@ def proxy(path):
             else:
                 logger.info(log_msg)
 
-            # 如果响应状态码为 4xx（尤其是 401/403/429），尝试切换Key
             if resp.status_code in (401, 403, 429):
                 logger.warning(f"Key {mask_key(current_key)} 返回 {resp.status_code}，尝试下一个")
                 last_error = resp.status_code
                 continue
 
-            # 构造响应头
             excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
             response_headers = [(name, value) for name, value in resp.raw.headers.items()
                                 if name.lower() not in excluded_headers]
@@ -389,13 +391,11 @@ def proxy(path):
             last_error = str(e)
             continue
 
-    # 所有Key都失败
     error_msg = f"所有可用Key均失败，最后错误: {last_error}"
     logger.error(error_msg)
     return jsonify({"error": error_msg}), 500
 
 def mask_key(key):
-    """隐藏密钥中间部分"""
     if not key:
         return ""
     if len(key) <= 8:
@@ -462,10 +462,9 @@ HTML_CONTENT = """
                 <div class="ios-card">
             <h2 class="card-title">
                 <span>✨ 代理状态 <span style="font-size: 14px; color: var(--theme-pink); margin-left: 10px; font-weight: normal;">总余额: {{ totalBalance }}</span></span>
-                <el-button size="small" type="primary" @click="copyText('http://127.0.0.1:5000/v1')" style="box-shadow: none !important;">复制地址</el-button>
+                <el-button size="small" type="primary" @click="copyProxyAddress" style="box-shadow: none !important;">复制地址</el-button>
             </h2>
             <el-table :data="keys" style="width: 100%" empty-text="暂无数据">
-
                 <el-table-column label="启用" width="60" align="center"><template #default="scope"><el-radio v-model="activeKey" :label="scope.row.key" @change="saveData"><span></span></el-radio></template></el-table-column>
                 <el-table-column label="API Key" min-width="150"><template #default="scope"><span style="font-family: monospace; color: var(--text-sub);">{{ maskKey(scope.row.key) }}</span></template></el-table-column>
                 <el-table-column prop="balance" label="余额" width="100" align="center"></el-table-column>
@@ -505,7 +504,6 @@ HTML_CONTENT = """
             const keys = ref([]);
             const activeKey = ref(null);
             
-            // 计算总余额的自动响应逻辑
             const totalBalance = computed(() => {
                 let total = 0;
                 let valid = false;
@@ -614,6 +612,18 @@ HTML_CONTENT = """
                     ElementPlus.ElMessage.error('复制失败');
                 });
             };
+
+            // 修改这里：利用 JS 动态获取当前访问的域名/IP
+            const copyProxyAddress = () => {
+                const protocol = window.location.protocol;
+                const hostname = window.location.hostname;
+                const port = window.location.port;
+                // 如果端口是80或443，则可能不需要显式拼接端口
+                const portPart = port ? `:${port}` : '';
+                const address = `${protocol}//${hostname}${portPart}/v1`;
+                copyText(address);
+            };
+
             const sendTest = async () => {
                 if (!activeKey.value) {
                     ElementPlus.ElMessage.warning('请先选择一个活动 Key');
@@ -708,7 +718,7 @@ HTML_CONTENT = """
                 deleteKey,
                 maskKey,
                 saveData,
-                copyText,
+                copyProxyAddress, // 暴露给模板使用
                 sendTest,
                 exportData,
                 triggerImport,
@@ -727,6 +737,8 @@ def show_menu():
     st_local, st_remote = check_st_versions()
     proxy_running = is_running(PID_FILE)
     st_running = is_running(ST_PID_FILE)
+    
+    local_ip = get_local_ip() # 获取局域网IP用于展示
 
     os.system("clear")
     print("\n╭──────────────────────────────╮")
@@ -734,11 +746,13 @@ def show_menu():
     print("╰──────────────────────────────╯")
     print("\n🔑 【API 本地代理】")
     print(f" 状态: {'🟢 运行中' if proxy_running else '🔴 已停止'}  {proxy_update}")
-    print(" 🔗 网页: http://127.0.0.1:5000")
+    print(f" 🔗 局域网: http://{local_ip}:{PORT}")
+    print(f" 🔗 本机: http://127.0.0.1:{PORT}")
     print("\n🍻 【傻酒馆 SillyTavern】")
     print(f" 状态: {'🟢 运行中' if st_running else '🔴 已停止'}")
     print(f" 版本: {st_local}(本地) | {st_remote}(最新)")
-    print(" 🔗 网页: http://127.0.0.1:8000")
+    print(f" 🔗 局域网: http://{local_ip}:{ST_PORT}")
+    print(f" 🔗 本机: http://127.0.0.1:{ST_PORT}")
     print("\n" + "─" * 32)
     print("  1. 启动代理    2. 停止代理")
     print("  3. 启动酒馆    4. 停止酒馆")
@@ -854,7 +868,7 @@ def main():
 
     # 命令行模式
     if args.command == "run_app":
-        # 作为后台服务运行
+        # 作为后台服务运行，0.0.0.0 默认允许所有网络接口访问
         app.run(host="0.0.0.0", port=PORT, use_reloader=False, debug=False)
         sys.exit(0)
 
