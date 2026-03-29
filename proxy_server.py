@@ -1,10 +1,7 @@
-
-
-cat << 'EOF' > ~/proxy_server.py
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-YunYun AI 代理服务 v3.8 (本地单机版)
+YunYun AI 代理服务 (本地单机版)
 支持硅基流动API代理、傻酒馆管理、智能密钥轮询、日志与备份等
 """
 
@@ -18,9 +15,7 @@ import logging
 import logging.handlers
 import subprocess
 import argparse
-import base64
 from pathlib import Path
-from threading import Lock
 from flask import Flask, request, jsonify, Response
 import requests
 
@@ -43,11 +38,10 @@ ST_PORT = 8000
 LOG_FILE = "proxy.log"
 LOG_MAX_BYTES = 10 * 1024 * 1024  # 10MB
 LOG_BACKUP_COUNT = 3
-BACKUP_DIR = "backups"
 ENCRYPT_KEY_FILE = "encrypt.key"
 
 # 故障转移配置
-RETRY_COUNT = 2           # 最多尝试几个Key
+RETRY_COUNT = 2       
 REQUEST_TIMEOUT = (5, 60) # (连接超时, 读取超时)
 
 # ========== 日志设置 ==========
@@ -133,8 +127,10 @@ def save_data(data):
             return float('inf')
         except:
             return float('inf')
+            
     data["keys"] = sorted(data["keys"], key=get_balance_val)
     json_str = json.dumps(data, indent=2, ensure_ascii=False)
+    
     if CRYPTO_AVAILABLE and os.path.exists(ENCRYPT_KEY_FILE):
         encrypted = "enc:" + encrypt_data(json_str)
         with open(DATA_FILE, "w", encoding="utf-8") as f:
@@ -199,7 +195,7 @@ def check_st_versions():
                 local_ver = data.get("version", "未知")
         except:
             pass
-    return local_ver, "已锁定 1.13.0"
+    return local_ver, "已强制锁定 1.13.0"
 
 # ========== Flask 应用 ==========
 app = Flask(__name__)
@@ -271,6 +267,7 @@ def proxy(path):
     start_time = time.time()
     active_key_val = data.get("active_key")
     ordered_keys = []
+    
     if active_key_val:
         for k in keys:
             if k["key"] == active_key_val:
@@ -372,6 +369,7 @@ HTML_CONTENT = """
         <div class="segment" :class="{active: activeTab === 'test'}" @click="activeTab = 'test'">连接测试</div>
         <div class="segment" :class="{active: activeTab === 'backup'}" @click="activeTab = 'backup'">备份/恢复</div>
     </div>
+    
     <div v-show="activeTab === 'console'">
         <div class="ios-card">
             <h2 class="card-title">🌸 批量导入</h2>
@@ -385,10 +383,10 @@ HTML_CONTENT = """
                 <el-button type="primary" @click="addSingleKey">添加</el-button>
             </div>
         </div>
-                <div class="ios-card">
+        
+        <div class="ios-card">
             <h2 class="card-title">
                 <span>✨ 代理状态 <span style="font-size: 14px; color: var(--theme-pink); margin-left: 10px; font-weight: normal;">总余额: {{ totalBalance }}</span></span>
-                <el-button size="small" type="primary" @click="copyProxyAddress" style="box-shadow: none !important;">复制地址</el-button>
             </h2>
             <el-table :data="keys" style="width: 100%" empty-text="暂无数据">
                 <el-table-column label="启用" width="60" align="center"><template #default="scope"><el-radio v-model="activeKey" :label="scope.row.key" @change="saveData"><span></span></el-radio></template></el-table-column>
@@ -398,6 +396,7 @@ HTML_CONTENT = """
             </el-table>
         </div>
     </div>
+    
     <div v-show="activeTab === 'test'" class="ios-card">
         <h2 class="card-title">⚡ 连通性测试</h2>
         <div v-if="!activeKey" style="color: #ff4d4f; text-align: center; font-weight: bold;">⚠️ 请先在【控制台】勾选一个 Key</div>
@@ -410,6 +409,7 @@ HTML_CONTENT = """
             <el-input v-if="testResult" type="textarea" v-model="testResult" :rows="6" readonly style="margin-top: 16px;"></el-input>
         </div>
     </div>
+    
     <div v-show="activeTab === 'backup'" class="ios-card">
         <h2 class="card-title">💾 备份与恢复</h2>
         <div class="backup-area">
@@ -422,6 +422,7 @@ HTML_CONTENT = """
         </div>
     </div>
 </div>
+
 <script>
     const { createApp, ref, computed, onMounted } = Vue;
     createApp({
@@ -429,6 +430,7 @@ HTML_CONTENT = """
             const activeTab = ref('console');
             const keys = ref([]);
             const activeKey = ref(null);
+            
             const totalBalance = computed(() => {
                 let total = 0;
                 let valid = false;
@@ -438,6 +440,7 @@ HTML_CONTENT = """
                 });
                 return valid ? total.toFixed(2) : '未知';
             });
+            
             const batchKeys = ref('');
             const singleKey = ref('');
             const checking = ref(false);
@@ -445,77 +448,152 @@ HTML_CONTENT = """
             const testResult = ref('');
             const isTesting = ref(false);
             const fileInput = ref(null);
-
+            
             const loadData = async () => {
                 const res = await fetch('/api/data');
                 const data = await res.json();
                 keys.value = data.keys || [];
                 activeKey.value = data.active_key;
             };
+            
             const saveData = async () => {
                 const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keys: keys.value, active_key: activeKey.value }) });
                 const result = await res.json();
                 keys.value = result.data.keys;
             };
-            const maskKey = (key) => { if (!key) return ''; if (key.length <= 8) return '***'; return key.substring(0, 5) + '...' + key.substring(key.length - 4); };
+            
+            const maskKey = (key) => { 
+                if (!key) return '';
+                if (key.length <= 8) return '***'; 
+                return key.substring(0, 5) + '...' + key.substring(key.length - 4); 
+            };
+            
             const importKeys = async () => {
                 const lines = batchKeys.value.split('\\n');
                 const newKeys = [];
-                for (let line of lines) { line = line.trim(); if (line.startsWith('sk-') && !keys.value.some(k => k.key === line)) { newKeys.push({ key: line, balance: '未知' }); } }
-                if (newKeys.length === 0) { ElementPlus.ElMessage.warning('没有有效的 Key'); return; }
-                keys.value.push(...newKeys); batchKeys.value = ''; await saveData(); ElementPlus.ElMessage.success(`成功导入 ${newKeys.length} 个 Key`);
+                for (let line of lines) { 
+                    line = line.trim();
+                    if (line.startsWith('sk-') && !keys.value.some(k => k.key === line)) { 
+                        newKeys.push({ key: line, balance: '未知' });
+                    } 
+                }
+                if (newKeys.length === 0) { 
+                    ElementPlus.ElMessage.warning('没有有效的 Key');
+                    return; 
+                }
+                keys.value.push(...newKeys);
+                batchKeys.value = ''; 
+                await saveData(); 
+                ElementPlus.ElMessage.success(`成功导入 ${newKeys.length} 个 Key`);
             };
+            
             const addSingleKey = async () => {
                 let key = singleKey.value.trim();
-                if (!key.startsWith('sk-')) { ElementPlus.ElMessage.warning('Key 必须以 sk- 开头'); return; }
-                if (keys.value.some(k => k.key === key)) { ElementPlus.ElMessage.warning('Key 已存在'); return; }
-                keys.value.push({ key, balance: '未知' }); singleKey.value = ''; await saveData(); ElementPlus.ElMessage.success('添加成功');
+                if (!key.startsWith('sk-')) { 
+                    ElementPlus.ElMessage.warning('Key 必须以 sk- 开头'); 
+                    return; 
+                }
+                if (keys.value.some(k => k.key === key)) { 
+                    ElementPlus.ElMessage.warning('Key 已存在');
+                    return; 
+                }
+                keys.value.push({ key, balance: '未知' });
+                singleKey.value = ''; 
+                await saveData(); 
+                ElementPlus.ElMessage.success('添加成功');
             };
-            const deleteKey = async (index) => { if (keys.value[index].key === activeKey.value) { activeKey.value = null; } keys.value.splice(index, 1); await saveData(); };
+            
+            const deleteKey = async (index) => { 
+                if (keys.value[index].key === activeKey.value) { 
+                    activeKey.value = null;
+                } 
+                keys.value.splice(index, 1); 
+                await saveData(); 
+            };
+            
             const checkAllBalances = async () => {
                 checking.value = true;
                 for (let i = 0; i < keys.value.length; i++) {
                     keys.value[i].balance = '...';
                     try {
                         const res = await fetch('/api/check_balance', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: keys.value[i].key }) });
-                        const data = await res.json(); keys.value[i].balance = data.balance;
-                    } catch (e) { keys.value[i].balance = '请求失败'; }
+                        const data = await res.json(); 
+                        keys.value[i].balance = data.balance;
+                    } catch (e) { 
+                        keys.value[i].balance = '请求失败';
+                    }
                     await saveData();
                 }
-                checking.value = false; ElementPlus.ElMessage.success('余额刷新完成');
+                checking.value = false; 
+                ElementPlus.ElMessage.success('余额刷新完成');
             };
-            const copyText = (text) => { navigator.clipboard.writeText(text).then(() => { ElementPlus.ElMessage.success('已复制'); }).catch(() => { ElementPlus.ElMessage.error('复制失败'); }); };
-            const copyProxyAddress = () => { const protocol = window.location.protocol; const hostname = window.location.hostname; const port = window.location.port; const portPart = port ? `:${port}` : ''; const address = `${protocol}//${hostname}${portPart}/v1`; copyText(address); };
+            
             const sendTest = async () => {
-                if (!activeKey.value) { ElementPlus.ElMessage.warning('请先选择一个活动 Key'); return; }
-                if (!testPrompt.value.trim()) { ElementPlus.ElMessage.warning('请输入测试内容'); return; }
-                isTesting.value = true; testResult.value = '请求发送中...';
+                if (!activeKey.value) { 
+                    ElementPlus.ElMessage.warning('请先选择一个活动 Key');
+                    return; 
+                }
+                if (!testPrompt.value.trim()) { 
+                    ElementPlus.ElMessage.warning('请输入测试内容');
+                    return; 
+                }
+                isTesting.value = true;
+                testResult.value = '请求发送中...';
                 try {
                     const response = await fetch('/v1/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: "Qwen/Qwen2.5-7B-Instruct", messages: [{ role: "user", content: testPrompt.value }], stream: false }) });
                     const data = await response.json();
-                    if (response.ok && data.choices && data.choices.length) { testResult.value = data.choices[0].message.content; } else { testResult.value = `错误: ${JSON.stringify(data)}`; }
-                } catch (error) { testResult.value = `请求失败: ${error.message}`; } finally { isTesting.value = false; }
+                    if (response.ok && data.choices && data.choices.length) { 
+                        testResult.value = data.choices[0].message.content;
+                    } else { 
+                        testResult.value = `错误: ${JSON.stringify(data)}`; 
+                    }
+                } catch (error) { 
+                    testResult.value = `请求失败: ${error.message}`;
+                } finally { 
+                    isTesting.value = false; 
+                }
             };
+            
             const exportData = async () => {
-                const res = await fetch('/api/export_backup'); const data = await res.json(); const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'}); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `yunyun_backup_${new Date().toISOString().slice(0,19)}.json`; a.click(); URL.revokeObjectURL(url); ElementPlus.ElMessage.success('导出成功');
+                const res = await fetch('/api/export_backup');
+                const data = await res.json(); 
+                const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'}); 
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a'); 
+                a.href = url; 
+                a.download = `yunyun_backup_${new Date().toISOString().slice(0,19)}.json`; 
+                a.click(); 
+                URL.revokeObjectURL(url); 
+                ElementPlus.ElMessage.success('导出成功');
             };
+            
             const triggerImport = () => { fileInput.value.click(); };
+            
             const importFile = async (event) => {
-                const file = event.target.files[0]; if (!file) return; const reader = new FileReader();
+                const file = event.target.files[0];
+                if (!file) return; 
+                const reader = new FileReader();
                 reader.onload = async (e) => {
                     try {
                         const data = JSON.parse(e.target.result);
                         const res = await fetch('/api/import_backup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
                         const result = await res.json();
-                        if (result.status === 'success') { await loadData(); ElementPlus.ElMessage.success('恢复成功'); } else { ElementPlus.ElMessage.error('恢复失败: ' + (result.message || '未知错误')); }
-                    } catch (err) { ElementPlus.ElMessage.error('文件解析失败'); }
+                        if (result.status === 'success') { 
+                            await loadData(); 
+                            ElementPlus.ElMessage.success('恢复成功');
+                        } else { 
+                            ElementPlus.ElMessage.error('恢复失败: ' + (result.message || '未知错误')); 
+                        }
+                    } catch (err) { 
+                        ElementPlus.ElMessage.error('文件解析失败');
+                    }
                     fileInput.value.value = '';
                 };
                 reader.readAsText(file);
             };
 
             onMounted(loadData);
-            return { totalBalance, activeTab, keys, activeKey, batchKeys, singleKey, checking, testPrompt, testResult, isTesting, fileInput, importKeys, addSingleKey, checkAllBalances, deleteKey, maskKey, saveData, copyProxyAddress, sendTest, exportData, triggerImport, importFile };
+            return { totalBalance, activeTab, keys, activeKey, batchKeys, singleKey, checking, testPrompt, testResult, isTesting, fileInput, importKeys, addSingleKey, checkAllBalances, deleteKey, maskKey, saveData, sendTest, exportData, triggerImport, importFile };
         }
     }).use(ElementPlus).mount('#app');
 </script>
@@ -536,11 +614,9 @@ def show_menu():
     print("╰──────────────────────────────╯")
     print("\n🔑 【API 本地代理】")
     print(f" 状态: {'🟢 运行中' if proxy_running else '🔴 已停止'}  {proxy_update}")
-    print(f" 🔗 本机访问: http://127.0.0.1:{PORT}")
     print("\n🍻 【傻酒馆 SillyTavern】")
     print(f" 状态: {'🟢 运行中' if st_running else '🔴 已停止'}")
     print(f" 版本: {st_local}(本地) | {st_remote}(状态)")
-    print(f" 🔗 本机访问: http://127.0.0.1:{ST_PORT}")
     print("\n" + "─" * 32)
     print("  1. 启动代理    2. 停止代理")
     print("  3. 启动酒馆    4. 停止酒馆")
@@ -552,6 +628,7 @@ def start_proxy():
     if is_running(PID_FILE):
         print("\n⚠️ 代理已在运行！")
         return
+    
     if check_port(PORT):
         print(f"\n⚠️ 端口 {PORT} 已被占用，可能已有服务运行。")
         return
@@ -591,7 +668,7 @@ def start_sillytavern():
         print("✅ 部署完成！")
     else:
         print("\n⏳ 强制锁定酒馆版本为 1.13.0 并检查依赖...")
-        # 强制丢弃本地更改防止 lock 冲突，再切换并安装
+        # 强制回退并锁定到 1.13.0
         os.system(f"cd {ST_DIR} && git fetch --tags && git reset --hard && git checkout 1.13.0 && npm install 2>/dev/null")
 
     print("\n🚀 启动傻酒馆中...")
@@ -615,7 +692,7 @@ def update_all():
     print("\n🔄 正在拉取代理代码更新...")
     os.system("git pull 2>/dev/null")
     if os.path.exists(ST_DIR):
-        print("→ 维持酒馆 1.13.0 版本（清理本地冲突）...")
+        print("→ 强制维持酒馆 1.13.0 版本（清理本地冲突）...")
         os.system(f"cd {ST_DIR} && git fetch --tags && git reset --hard && git checkout 1.13.0 && npm install")
     print("\n✅ 更新校验完毕！(重启服务生效)")
     input("\n👉 按回车继续...")
@@ -639,24 +716,28 @@ def main():
     args = parser.parse_args()
 
     if args.command == "run_app":
-        # 移除了 0.0.0.0 绑定，强制限制在本地 127.0.0.1
         app.run(host="127.0.0.1", port=PORT, use_reloader=False, debug=False)
         sys.exit(0)
 
     if args.command == "start":
         if args.daemon:
-            if os.fork() == 0: start_proxy(); sys.exit(0)
+            if os.fork() == 0: start_proxy();
+            sys.exit(0)
             else: sys.exit(0)
-        else: start_proxy(); sys.exit(0)
+        else: start_proxy();
+        sys.exit(0)
 
     if args.command == "start-st":
         if args.daemon:
-            if os.fork() == 0: start_sillytavern(); sys.exit(0)
+            if os.fork() == 0: start_sillytavern();
+            sys.exit(0)
             else: sys.exit(0)
-        else: start_sillytavern(); sys.exit(0)
+        else: start_sillytavern();
+        sys.exit(0)
 
     if args.command == "stop": stop_proxy(); sys.exit(0)
-    if args.command == "stop-st": stop_sillytavern(); sys.exit(0)
+    if args.command == "stop-st": stop_sillytavern();
+    sys.exit(0)
 
     while True:
         show_menu()
@@ -667,12 +748,10 @@ def main():
         elif choice == "4": stop_sillytavern()
         elif choice == "5": update_all()
         elif choice == "6": show_autostart_help()
-        elif choice == "0": os.system("clear"); sys.exit(0)
+        elif choice == "0": os.system("clear");
+        sys.exit(0)
         else: print("\n⚠️ 无效选项，请重试。")
         if choice not in ["5", "6", "0"]: input("\n👉 按回车返回...")
 
 if __name__ == "__main__":
     main()
-EOF
-
-
