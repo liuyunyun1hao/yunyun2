@@ -1,7 +1,10 @@
+
+
+cat << 'EOF' > ~/proxy_server.py
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-YunYun AI 代理服务 v3.8 (支持局域网访问版)
+YunYun AI 代理服务 v3.8 (本地单机版)
 支持硅基流动API代理、傻酒馆管理、智能密钥轮询、日志与备份等
 """
 
@@ -29,7 +32,7 @@ except ImportError:
     CRYPTO_AVAILABLE = False
 
 # ========== 配置 ==========
-VERSION = "3.8-LAN"
+VERSION = "3.8-Local"
 DATA_FILE = "keys_data.json"
 PID_FILE = "server.pid"
 ST_PID_FILE = "st_server.pid"
@@ -41,7 +44,7 @@ LOG_FILE = "proxy.log"
 LOG_MAX_BYTES = 10 * 1024 * 1024  # 10MB
 LOG_BACKUP_COUNT = 3
 BACKUP_DIR = "backups"
-ENCRYPT_KEY_FILE = "encrypt.key"  # 如果启用加密，会生成此文件
+ENCRYPT_KEY_FILE = "encrypt.key"
 
 # 故障转移配置
 RETRY_COUNT = 2           # 最多尝试几个Key
@@ -50,7 +53,6 @@ REQUEST_TIMEOUT = (5, 60) # (连接超时, 读取超时)
 # ========== 日志设置 ==========
 logger = logging.getLogger("YunYunProxy")
 logger.setLevel(logging.INFO)
-# 文件日志（带轮转）
 file_handler = logging.handlers.RotatingFileHandler(
     LOG_FILE, maxBytes=LOG_MAX_BYTES, backupCount=LOG_BACKUP_COUNT
 )
@@ -58,7 +60,6 @@ file_handler.setFormatter(logging.Formatter(
     '[%(asctime)s] %(levelname)s - %(message)s'
 ))
 logger.addHandler(file_handler)
-# 控制台日志（仅错误）
 console_handler = logging.StreamHandler()
 console_handler.setLevel(logging.ERROR)
 console_handler.setFormatter(logging.Formatter('%(message)s'))
@@ -66,7 +67,6 @@ logger.addHandler(console_handler)
 
 # ========== 辅助函数 ==========
 def get_encrypt_key():
-    """获取或生成加密密钥"""
     if not CRYPTO_AVAILABLE:
         return None
     key_file = Path(ENCRYPT_KEY_FILE)
@@ -77,11 +77,9 @@ def get_encrypt_key():
         key = Fernet.generate_key()
         with open(key_file, 'wb') as f:
             f.write(key)
-        logger.info("已生成新的加密密钥，请妥善保管 %s" % ENCRYPT_KEY_FILE)
         return key
 
 def encrypt_data(data):
-    """加密数据（字符串）"""
     key = get_encrypt_key()
     if key is None:
         return data
@@ -93,7 +91,6 @@ def encrypt_data(data):
         return data
 
 def decrypt_data(data):
-    """解密数据"""
     key = get_encrypt_key()
     if key is None:
         return data
@@ -104,18 +101,15 @@ def decrypt_data(data):
         return data
 
 def load_data():
-    """加载密钥数据，支持加密"""
     if os.path.exists(DATA_FILE):
         try:
             with open(DATA_FILE, "r", encoding="utf-8") as f:
                 raw = f.read()
-                # 尝试解密（如果开启了加密）
                 if raw.startswith("enc:"):
                     decrypted = decrypt_data(raw[4:])
                     data = json.loads(decrypted)
                 else:
                     data = json.loads(raw)
-                # 确保结构完整
                 if "keys" not in data:
                     data["keys"] = []
                 if "active_key" not in data:
@@ -126,8 +120,6 @@ def load_data():
     return {"keys": [], "active_key": None}
 
 def save_data(data):
-    """保存数据，支持加密，并按余额排序"""
-    # 排序：余额低的优先（便于自动选择）
     def get_balance_val(item):
         try:
             bal = item.get("balance", "0")
@@ -143,7 +135,6 @@ def save_data(data):
             return float('inf')
     data["keys"] = sorted(data["keys"], key=get_balance_val)
     json_str = json.dumps(data, indent=2, ensure_ascii=False)
-    # 如果开启了加密
     if CRYPTO_AVAILABLE and os.path.exists(ENCRYPT_KEY_FILE):
         encrypted = "enc:" + encrypt_data(json_str)
         with open(DATA_FILE, "w", encoding="utf-8") as f:
@@ -153,7 +144,6 @@ def save_data(data):
             f.write(json_str)
 
 def check_port(port):
-    """检查端口是否被占用"""
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         sock.bind(('127.0.0.1', port))
@@ -162,20 +152,7 @@ def check_port(port):
     except:
         return True
 
-def get_local_ip():
-    """获取设备在局域网中的IP地址"""
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        # 尝试连接一个外部地址，不会真正发包，但能获取路由分配的本地IP
-        s.connect(('8.8.8.8', 80))
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
-    except Exception:
-        return "127.0.0.1"
-
 def kill_process(pid_file):
-    """安全终止进程"""
     if os.path.exists(pid_file):
         try:
             with open(pid_file, "r") as f:
@@ -196,7 +173,6 @@ def kill_process(pid_file):
                 pass
 
 def is_running(pid_file):
-    """检查进程是否存活"""
     if not os.path.exists(pid_file):
         return False
     try:
@@ -211,19 +187,8 @@ def is_running(pid_file):
             pass
         return False
 
-# ========== 版本检测 ==========
 def check_proxy_update():
-    try:
-        url = "https://raw.githubusercontent.com/liuyunyun1hao/yunyun2/main/proxy_server.py"
-        res = requests.get(url, timeout=3)
-        if res.status_code == 200:
-            if f'VERSION = "{VERSION}"' not in res.text:
-                return "✨(有新版本)"
-            else:
-                return "✅(最新)"
-        return "⚠️(检测失败)"
-    except:
-        return "⚠️(网络异常)"
+    return "✅(本地域名版)"
 
 def check_st_versions():
     local_ver = "未安装"
@@ -234,15 +199,7 @@ def check_st_versions():
                 local_ver = data.get("version", "未知")
         except:
             pass
-    remote_ver = "获取中"
-    try:
-        url = "https://raw.githubusercontent.com/SillyTavern/SillyTavern/release/package.json"
-        res = requests.get(url, timeout=3)
-        if res.status_code == 200:
-            remote_ver = res.json().get("version", "未知")
-    except:
-        remote_ver = "超时"
-    return local_ver, remote_ver
+    return local_ver, "已锁定 1.13.0"
 
 # ========== Flask 应用 ==========
 app = Flask(__name__)
@@ -281,27 +238,18 @@ def check_balance():
                 balance = f"{balance:.2f}"
             return jsonify({"balance": balance})
         else:
-            logger.warning(f"余额查询失败: {resp.status_code}")
             return jsonify({"balance": "查询失败"})
     except Exception as e:
-        logger.error(f"余额检查异常: {e}")
         return jsonify({"balance": "网络异常"})
 
 @app.route("/api/export_backup", methods=["GET"])
 def export_backup():
-    """导出当前数据为文件"""
-    data = load_data()
-    return jsonify(data)
+    return jsonify(load_data())
 
 @app.route("/api/import_backup", methods=["POST"])
 def import_backup():
-    """导入备份数据"""
     try:
         data = request.json
-        if "keys" not in data:
-            data["keys"] = []
-        if "active_key" not in data:
-            data["active_key"] = None
         save_data(data)
         return jsonify({"status": "success"})
     except Exception as e:
@@ -309,9 +257,6 @@ def import_backup():
 
 @app.route("/v1/<path:path>", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
 def proxy(path):
-    """
-    智能代理：支持故障转移，自动切换Key
-    """
     data = load_data()
     keys = data.get("keys", [])
     if not keys:
@@ -324,7 +269,6 @@ def proxy(path):
     is_stream = request.is_json and json_data.get("stream", False)
 
     start_time = time.time()
-
     active_key_val = data.get("active_key")
     ordered_keys = []
     if active_key_val:
@@ -357,14 +301,8 @@ def proxy(path):
                 timeout=REQUEST_TIMEOUT
             )
             elapsed = (time.time() - start_time) * 1000
-            log_msg = f"PROXY {request.method} /{path} -> {resp.status_code} | Key: {mask_key(current_key)} | Model: {model} | Time: {elapsed:.0f}ms"
-            if resp.status_code >= 500:
-                logger.warning(log_msg)
-            else:
-                logger.info(log_msg)
-
+            
             if resp.status_code in (401, 403, 429):
-                logger.warning(f"Key {mask_key(current_key)} 返回 {resp.status_code}，尝试下一个")
                 last_error = resp.status_code
                 continue
 
@@ -373,36 +311,24 @@ def proxy(path):
                                 if name.lower() not in excluded_headers]
 
             if is_stream:
-                return Response(resp.iter_content(chunk_size=1024),
-                                status=resp.status_code,
-                                headers=response_headers)
+                return Response(resp.iter_content(chunk_size=1024), status=resp.status_code, headers=response_headers)
             else:
-                return Response(resp.content,
-                                status=resp.status_code,
-                                headers=response_headers,
-                                content_type=resp.headers.get('content-type'))
-
+                return Response(resp.content, status=resp.status_code, headers=response_headers, content_type=resp.headers.get('content-type'))
         except requests.exceptions.Timeout:
-            logger.warning(f"Key {mask_key(current_key)} 超时，尝试下一个")
             last_error = "timeout"
             continue
         except Exception as e:
-            logger.error(f"代理错误 (Key {mask_key(current_key)}): {e}")
             last_error = str(e)
             continue
 
-    error_msg = f"所有可用Key均失败，最后错误: {last_error}"
-    logger.error(error_msg)
-    return jsonify({"error": error_msg}), 500
+    return jsonify({"error": f"所有可用Key均失败，最后错误: {last_error}"}), 500
 
 def mask_key(key):
-    if not key:
-        return ""
-    if len(key) <= 8:
-        return "***"
+    if not key: return ""
+    if len(key) <= 8: return "***"
     return key[:5] + "..." + key[-4:]
 
-# ========== 前端 HTML（增强版） ==========
+# ========== 前端 HTML ==========
 HTML_CONTENT = """
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -503,20 +429,15 @@ HTML_CONTENT = """
             const activeTab = ref('console');
             const keys = ref([]);
             const activeKey = ref(null);
-            
             const totalBalance = computed(() => {
                 let total = 0;
                 let valid = false;
                 keys.value.forEach(k => {
                     const val = parseFloat(k.balance);
-                    if (!isNaN(val)) {
-                        total += val;
-                        valid = true;
-                    }
+                    if (!isNaN(val)) { total += val; valid = true; }
                 });
                 return valid ? total.toFixed(2) : '未知';
             });
-
             const batchKeys = ref('');
             const singleKey = ref('');
             const checking = ref(false);
@@ -532,198 +453,69 @@ HTML_CONTENT = """
                 activeKey.value = data.active_key;
             };
             const saveData = async () => {
-                const res = await fetch('/api/data', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ keys: keys.value, active_key: activeKey.value })
-                });
+                const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keys: keys.value, active_key: activeKey.value }) });
                 const result = await res.json();
                 keys.value = result.data.keys;
             };
-            const maskKey = (key) => {
-                if (!key) return '';
-                if (key.length <= 8) return '***';
-                return key.substring(0, 5) + '...' + key.substring(key.length - 4);
-            };
+            const maskKey = (key) => { if (!key) return ''; if (key.length <= 8) return '***'; return key.substring(0, 5) + '...' + key.substring(key.length - 4); };
             const importKeys = async () => {
                 const lines = batchKeys.value.split('\\n');
                 const newKeys = [];
-                for (let line of lines) {
-                    line = line.trim();
-                    if (line.startsWith('sk-') && !keys.value.some(k => k.key === line)) {
-                        newKeys.push({ key: line, balance: '未知' });
-                    }
-                }
-                if (newKeys.length === 0) {
-                    ElementPlus.ElMessage.warning('没有有效的 Key（需以 sk- 开头）');
-                    return;
-                }
-                keys.value.push(...newKeys);
-                batchKeys.value = '';
-                await saveData();
-                ElementPlus.ElMessage.success(`成功导入 ${newKeys.length} 个 Key`);
+                for (let line of lines) { line = line.trim(); if (line.startsWith('sk-') && !keys.value.some(k => k.key === line)) { newKeys.push({ key: line, balance: '未知' }); } }
+                if (newKeys.length === 0) { ElementPlus.ElMessage.warning('没有有效的 Key'); return; }
+                keys.value.push(...newKeys); batchKeys.value = ''; await saveData(); ElementPlus.ElMessage.success(`成功导入 ${newKeys.length} 个 Key`);
             };
             const addSingleKey = async () => {
                 let key = singleKey.value.trim();
-                if (!key.startsWith('sk-')) {
-                    ElementPlus.ElMessage.warning('Key 必须以 sk- 开头');
-                    return;
-                }
-                if (keys.value.some(k => k.key === key)) {
-                    ElementPlus.ElMessage.warning('Key 已存在');
-                    return;
-                }
-                keys.value.push({ key, balance: '未知' });
-                singleKey.value = '';
-                await saveData();
-                ElementPlus.ElMessage.success('添加成功');
+                if (!key.startsWith('sk-')) { ElementPlus.ElMessage.warning('Key 必须以 sk- 开头'); return; }
+                if (keys.value.some(k => k.key === key)) { ElementPlus.ElMessage.warning('Key 已存在'); return; }
+                keys.value.push({ key, balance: '未知' }); singleKey.value = ''; await saveData(); ElementPlus.ElMessage.success('添加成功');
             };
-            const deleteKey = async (index) => {
-                if (keys.value[index].key === activeKey.value) {
-                    activeKey.value = null;
-                }
-                keys.value.splice(index, 1);
-                await saveData();
-            };
+            const deleteKey = async (index) => { if (keys.value[index].key === activeKey.value) { activeKey.value = null; } keys.value.splice(index, 1); await saveData(); };
             const checkAllBalances = async () => {
                 checking.value = true;
                 for (let i = 0; i < keys.value.length; i++) {
                     keys.value[i].balance = '...';
                     try {
-                        const res = await fetch('/api/check_balance', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ key: keys.value[i].key })
-                        });
-                        const data = await res.json();
-                        keys.value[i].balance = data.balance;
-                    } catch (e) {
-                        keys.value[i].balance = '请求失败';
-                    }
+                        const res = await fetch('/api/check_balance', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: keys.value[i].key }) });
+                        const data = await res.json(); keys.value[i].balance = data.balance;
+                    } catch (e) { keys.value[i].balance = '请求失败'; }
                     await saveData();
                 }
-                checking.value = false;
-                ElementPlus.ElMessage.success('余额刷新完成');
+                checking.value = false; ElementPlus.ElMessage.success('余额刷新完成');
             };
-            const copyText = (text) => {
-                navigator.clipboard.writeText(text).then(() => {
-                    ElementPlus.ElMessage.success('已复制');
-                }).catch(() => {
-                    ElementPlus.ElMessage.error('复制失败');
-                });
-            };
-
-            // 修改这里：利用 JS 动态获取当前访问的域名/IP
-            const copyProxyAddress = () => {
-                const protocol = window.location.protocol;
-                const hostname = window.location.hostname;
-                const port = window.location.port;
-                // 如果端口是80或443，则可能不需要显式拼接端口
-                const portPart = port ? `:${port}` : '';
-                const address = `${protocol}//${hostname}${portPart}/v1`;
-                copyText(address);
-            };
-
+            const copyText = (text) => { navigator.clipboard.writeText(text).then(() => { ElementPlus.ElMessage.success('已复制'); }).catch(() => { ElementPlus.ElMessage.error('复制失败'); }); };
+            const copyProxyAddress = () => { const protocol = window.location.protocol; const hostname = window.location.hostname; const port = window.location.port; const portPart = port ? `:${port}` : ''; const address = `${protocol}//${hostname}${portPart}/v1`; copyText(address); };
             const sendTest = async () => {
-                if (!activeKey.value) {
-                    ElementPlus.ElMessage.warning('请先选择一个活动 Key');
-                    return;
-                }
-                if (!testPrompt.value.trim()) {
-                    ElementPlus.ElMessage.warning('请输入测试内容');
-                    return;
-                }
-                isTesting.value = true;
-                testResult.value = '请求发送中...';
+                if (!activeKey.value) { ElementPlus.ElMessage.warning('请先选择一个活动 Key'); return; }
+                if (!testPrompt.value.trim()) { ElementPlus.ElMessage.warning('请输入测试内容'); return; }
+                isTesting.value = true; testResult.value = '请求发送中...';
                 try {
-                    const response = await fetch('/v1/chat/completions', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            model: "Qwen/Qwen2.5-7B-Instruct",
-                            messages: [{ role: "user", content: testPrompt.value }],
-                            stream: false
-                        })
-                    });
+                    const response = await fetch('/v1/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: "Qwen/Qwen2.5-7B-Instruct", messages: [{ role: "user", content: testPrompt.value }], stream: false }) });
                     const data = await response.json();
-                    if (response.ok && data.choices && data.choices.length) {
-                        testResult.value = data.choices[0].message.content;
-                    } else {
-                        testResult.value = `错误: ${JSON.stringify(data)}`;
-                    }
-                } catch (error) {
-                    testResult.value = `请求失败: ${error.message}`;
-                } finally {
-                    isTesting.value = false;
-                }
+                    if (response.ok && data.choices && data.choices.length) { testResult.value = data.choices[0].message.content; } else { testResult.value = `错误: ${JSON.stringify(data)}`; }
+                } catch (error) { testResult.value = `请求失败: ${error.message}`; } finally { isTesting.value = false; }
             };
             const exportData = async () => {
-                const res = await fetch('/api/export_backup');
-                const data = await res.json();
-                const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `yunyun_backup_${new Date().toISOString().slice(0,19)}.json`;
-                a.click();
-                URL.revokeObjectURL(url);
-                ElementPlus.ElMessage.success('导出成功');
+                const res = await fetch('/api/export_backup'); const data = await res.json(); const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'}); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `yunyun_backup_${new Date().toISOString().slice(0,19)}.json`; a.click(); URL.revokeObjectURL(url); ElementPlus.ElMessage.success('导出成功');
             };
-            const triggerImport = () => {
-                fileInput.value.click();
-            };
+            const triggerImport = () => { fileInput.value.click(); };
             const importFile = async (event) => {
-                const file = event.target.files[0];
-                if (!file) return;
-                const reader = new FileReader();
+                const file = event.target.files[0]; if (!file) return; const reader = new FileReader();
                 reader.onload = async (e) => {
                     try {
                         const data = JSON.parse(e.target.result);
-                        const res = await fetch('/api/import_backup', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(data)
-                        });
+                        const res = await fetch('/api/import_backup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
                         const result = await res.json();
-                        if (result.status === 'success') {
-                            await loadData();
-                            ElementPlus.ElMessage.success('恢复成功');
-                        } else {
-                            ElementPlus.ElMessage.error('恢复失败: ' + (result.message || '未知错误'));
-                        }
-                    } catch (err) {
-                        ElementPlus.ElMessage.error('文件解析失败');
-                    }
+                        if (result.status === 'success') { await loadData(); ElementPlus.ElMessage.success('恢复成功'); } else { ElementPlus.ElMessage.error('恢复失败: ' + (result.message || '未知错误')); }
+                    } catch (err) { ElementPlus.ElMessage.error('文件解析失败'); }
                     fileInput.value.value = '';
                 };
                 reader.readAsText(file);
             };
 
             onMounted(loadData);
-            return {
-                totalBalance,
-                activeTab,
-                keys,
-                activeKey,
-                batchKeys,
-                singleKey,
-                checking,
-                testPrompt,
-                testResult,
-                isTesting,
-                fileInput,
-                importKeys,
-                addSingleKey,
-                checkAllBalances,
-                deleteKey,
-                maskKey,
-                saveData,
-                copyProxyAddress, // 暴露给模板使用
-                sendTest,
-                exportData,
-                triggerImport,
-                importFile
-            };
+            return { totalBalance, activeTab, keys, activeKey, batchKeys, singleKey, checking, testPrompt, testResult, isTesting, fileInput, importKeys, addSingleKey, checkAllBalances, deleteKey, maskKey, saveData, copyProxyAddress, sendTest, exportData, triggerImport, importFile };
         }
     }).use(ElementPlus).mount('#app');
 </script>
@@ -737,8 +529,6 @@ def show_menu():
     st_local, st_remote = check_st_versions()
     proxy_running = is_running(PID_FILE)
     st_running = is_running(ST_PID_FILE)
-    
-    local_ip = get_local_ip() # 获取局域网IP用于展示
 
     os.system("clear")
     print("\n╭──────────────────────────────╮")
@@ -746,13 +536,11 @@ def show_menu():
     print("╰──────────────────────────────╯")
     print("\n🔑 【API 本地代理】")
     print(f" 状态: {'🟢 运行中' if proxy_running else '🔴 已停止'}  {proxy_update}")
-    print(f" 🔗 局域网: http://{local_ip}:{PORT}")
-    print(f" 🔗 本机: http://127.0.0.1:{PORT}")
+    print(f" 🔗 本机访问: http://127.0.0.1:{PORT}")
     print("\n🍻 【傻酒馆 SillyTavern】")
     print(f" 状态: {'🟢 运行中' if st_running else '🔴 已停止'}")
-    print(f" 版本: {st_local}(本地) | {st_remote}(最新)")
-    print(f" 🔗 局域网: http://{local_ip}:{ST_PORT}")
-    print(f" 🔗 本机: http://127.0.0.1:{ST_PORT}")
+    print(f" 版本: {st_local}(本地) | {st_remote}(状态)")
+    print(f" 🔗 本机访问: http://127.0.0.1:{ST_PORT}")
     print("\n" + "─" * 32)
     print("  1. 启动代理    2. 停止代理")
     print("  3. 启动酒馆    4. 停止酒馆")
@@ -768,14 +556,8 @@ def start_proxy():
         print(f"\n⚠️ 端口 {PORT} 已被占用，可能已有服务运行。")
         return
     try:
-        p = subprocess.Popen(
-            [sys.executable, __file__, "run_app"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
-        with open(PID_FILE, "w") as f:
-            f.write(str(p.pid))
-        # 等待服务启动
+        p = subprocess.Popen([sys.executable, __file__, "run_app"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        with open(PID_FILE, "w") as f: f.write(str(p.pid))
         for _ in range(10):
             if not check_port(PORT):
                 print("\n✅ 代理启动成功！")
@@ -794,43 +576,34 @@ def start_sillytavern():
         print("\n⚠️ 傻酒馆已在运行！")
         return
     if check_port(ST_PORT):
-        print(f"\n⚠️ 端口 {ST_PORT} 已被占用，可能已有服务运行。")
+        print(f"\n⚠️ 端口 {ST_PORT} 已被占用。")
         return
+    
     if not os.path.exists(ST_DIR):
         print("\n📥 首次使用，正在部署傻酒馆...")
-        print("→ 安装必要工具...")
-        if os.system("pkg install nodejs git -y") != 0:
-            print("❌ 安装工具失败，请确保网络正常并重试。")
-            return
-        print("\n→ 克隆代码仓库...")
+        print("→ 克隆代码仓库并切换至 1.13.0 ...")
         if os.system(f"git clone https://github.com/SillyTavern/SillyTavern.git {ST_DIR}") != 0:
-            print("❌ 克隆失败，请检查网络（可能需要全局代理）。")
+            print("❌ 克隆失败，请检查网络。")
             return
-        print("\n→ 安装依赖包...")
-        if os.system(f"cd {ST_DIR} && npm install") != 0:
-            print("❌ 依赖安装失败，请检查网络。")
+        if os.system(f"cd {ST_DIR} && git checkout 1.13.0 && npm install") != 0:
+            print("❌ 依赖安装失败。")
             return
         print("✅ 部署完成！")
     else:
-        print("\n⏳ 检查依赖更新...")
-        os.system(f"cd {ST_DIR} && npm install 2>/dev/null")
+        print("\n⏳ 强制锁定酒馆版本为 1.13.0 并检查依赖...")
+        # 强制丢弃本地更改防止 lock 冲突，再切换并安装
+        os.system(f"cd {ST_DIR} && git fetch --tags && git reset --hard && git checkout 1.13.0 && npm install 2>/dev/null")
 
     print("\n🚀 启动傻酒馆中...")
     try:
-        p = subprocess.Popen(
-            ["node", "server.js"],
-            cwd=ST_DIR,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
-        with open(ST_PID_FILE, "w") as f:
-            f.write(str(p.pid))
+        p = subprocess.Popen(["node", "server.js"], cwd=ST_DIR, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        with open(ST_PID_FILE, "w") as f: f.write(str(p.pid))
         for _ in range(10):
             if not check_port(ST_PORT):
                 print("✅ 傻酒馆启动成功！")
                 return
             time.sleep(0.5)
-        print("⚠️ 启动可能失败，请手动检查。")
+        print("⚠️ 启动可能较慢或失败，请检查。")
     except Exception as e:
         print(f"\n❌ 启动失败: {e}")
 
@@ -839,12 +612,12 @@ def stop_sillytavern():
     print("\n✅ 傻酒馆已停止。")
 
 def update_all():
-    print("\n🔄 正在拉取代码更新...")
-    os.system("git pull")
+    print("\n🔄 正在拉取代理代码更新...")
+    os.system("git pull 2>/dev/null")
     if os.path.exists(ST_DIR):
-        print("→ 更新酒馆...")
-        os.system(f"cd {ST_DIR} && git pull && npm install")
-    print("\n✅ 更新完毕！(重启服务生效)")
+        print("→ 维持酒馆 1.13.0 版本（清理本地冲突）...")
+        os.system(f"cd {ST_DIR} && git fetch --tags && git reset --hard && git checkout 1.13.0 && npm install")
+    print("\n✅ 更新校验完毕！(重启服务生效)")
     input("\n👉 按回车继续...")
 
 def show_autostart_help():
@@ -859,76 +632,47 @@ def show_autostart_help():
     print("\n ✅ 完成后，下次打开 Termux 就会自动弹出了！")
     input("\n👉 按回车返回...")
 
-# ========== 命令行入口 ==========
 def main():
-    parser = argparse.ArgumentParser(description="YunYun AI 代理服务")
+    parser = argparse.ArgumentParser()
     parser.add_argument("command", nargs="?", help="启动命令: start | start-st | stop | stop-st | run-app")
-    parser.add_argument("--daemon", action="store_true", help="后台运行（仅适用于 start 系列）")
+    parser.add_argument("--daemon", action="store_true")
     args = parser.parse_args()
 
-    # 命令行模式
     if args.command == "run_app":
-        # 作为后台服务运行，0.0.0.0 默认允许所有网络接口访问
-        app.run(host="0.0.0.0", port=PORT, use_reloader=False, debug=False)
+        # 移除了 0.0.0.0 绑定，强制限制在本地 127.0.0.1
+        app.run(host="127.0.0.1", port=PORT, use_reloader=False, debug=False)
         sys.exit(0)
 
     if args.command == "start":
         if args.daemon:
-            # 启动代理并后台化（通过fork）
-            if os.fork() == 0:
-                # 子进程
-                start_proxy()
-                sys.exit(0)
-            else:
-                print("代理已在后台启动，PID文件:", PID_FILE)
-                sys.exit(0)
-        else:
-            start_proxy()
-            sys.exit(0)
+            if os.fork() == 0: start_proxy(); sys.exit(0)
+            else: sys.exit(0)
+        else: start_proxy(); sys.exit(0)
 
     if args.command == "start-st":
         if args.daemon:
-            if os.fork() == 0:
-                start_sillytavern()
-                sys.exit(0)
-            else:
-                print("傻酒馆已在后台启动，PID文件:", ST_PID_FILE)
-                sys.exit(0)
-        else:
-            start_sillytavern()
-            sys.exit(0)
+            if os.fork() == 0: start_sillytavern(); sys.exit(0)
+            else: sys.exit(0)
+        else: start_sillytavern(); sys.exit(0)
 
-    if args.command == "stop":
-        stop_proxy()
-        sys.exit(0)
+    if args.command == "stop": stop_proxy(); sys.exit(0)
+    if args.command == "stop-st": stop_sillytavern(); sys.exit(0)
 
-    if args.command == "stop-st":
-        stop_sillytavern()
-        sys.exit(0)
-
-    # 无参数则进入交互菜单
     while True:
         show_menu()
         choice = input(" 请输入数字指令: ").strip()
-        if choice == "1":
-            start_proxy()
-        elif choice == "2":
-            stop_proxy()
-        elif choice == "3":
-            start_sillytavern()
-        elif choice == "4":
-            stop_sillytavern()
-        elif choice == "5":
-            update_all()
-        elif choice == "6":
-            show_autostart_help()
-        elif choice == "0":
-            os.system("clear")
-            sys.exit(0)
-        else:
-            print("\n⚠️ 无效选项，请重试。")
-        if choice not in ["5", "6"]:
-            input("\n👉 按回车返回...")
+        if choice == "1": start_proxy()
+        elif choice == "2": stop_proxy()
+        elif choice == "3": start_sillytavern()
+        elif choice == "4": stop_sillytavern()
+        elif choice == "5": update_all()
+        elif choice == "6": show_autostart_help()
+        elif choice == "0": os.system("clear"); sys.exit(0)
+        else: print("\n⚠️ 无效选项，请重试。")
+        if choice not in ["5", "6", "0"]: input("\n👉 按回车返回...")
 
 if __name__ == "__main__":
     main()
+EOF
+
+
