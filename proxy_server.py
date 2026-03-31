@@ -41,8 +41,8 @@ LOG_BACKUP_COUNT = 3
 ENCRYPT_KEY_FILE = "encrypt.key"
 
 # 故障转移配置
-RETRY_COUNT = 2       
-REQUEST_TIMEOUT = (5, 60) # (连接超时, 读取超时)
+RETRY_COUNT = 3       # 优化：移动端网络波动大，增加一次重试机会
+REQUEST_TIMEOUT = (10, 120) # 优化：大幅提高连接与读取超时上限，防止弱网下频繁断开卡顿
 
 # ========== 日志设置 ==========
 logger = logging.getLogger("YunYunProxy")
@@ -614,6 +614,8 @@ def show_menu():
     print("╰──────────────────────────────╯")
     print("\n🔑 【API 本地代理】")
     print(f" 状态: {'🟢 运行中' if proxy_running else '🔴 已停止'}  {proxy_update}")
+    if proxy_running:
+        print(f" 🌐 管理面板: http://127.0.0.1:{PORT} (长按复制，在浏览器中打开)")
     print("\n🍻 【傻酒馆 SillyTavern】")
     print(f" 状态: {'🟢 运行中' if st_running else '🔴 已停止'}")
     print(f" 版本: {st_local}(本地) | {st_remote}(状态)")
@@ -716,7 +718,9 @@ def main():
     args = parser.parse_args()
 
     if args.command == "run_app":
-        app.run(host="127.0.0.1", port=PORT, use_reloader=False, debug=False)
+        # 性能优化：开启 threaded=True 支持多线程并发，防止多条请求同时到达时手机端卡顿
+        # host="0.0.0.0" 允许在局域网下被其他设备（如电脑）直接访问前端面板
+        app.run(host="0.0.0.0", port=PORT, use_reloader=False, debug=False, threaded=True)
         sys.exit(0)
 
     if args.command == "start":
