@@ -94,7 +94,18 @@ def decrypt_data(data):
     except:
         return data
 
+# ==========================================
+# 🚀 性能优化：全局内存缓存变量
+# 作用：极大降低手机闪存的物理读写频率，提升高并发下的响应速度
+# ==========================================
+_MEM_CACHE = None
+
 def load_data():
+    global _MEM_CACHE
+    # 如果内存里已经加载过数据，直接毫秒级返回，不再去读取物理文件
+    if _MEM_CACHE is not None:
+        return _MEM_CACHE
+        
     if os.path.exists(DATA_FILE):
         try:
             with open(DATA_FILE, "r", encoding="utf-8") as f:
@@ -108,12 +119,17 @@ def load_data():
                     data["keys"] = []
                 if "active_key" not in data:
                     data["active_key"] = None
+                
+                _MEM_CACHE = data  # 首次读取后，存入缓存
                 return data
         except Exception as e:
             logger.error(f"加载数据失败: {e}")
-    return {"keys": [], "active_key": None}
+            
+    _MEM_CACHE = {"keys": [], "active_key": None}
+    return _MEM_CACHE
 
 def save_data(data):
+    global _MEM_CACHE
     def get_balance_val(item):
         try:
             bal = item.get("balance", "0")
@@ -129,6 +145,10 @@ def save_data(data):
             return float('inf')
             
     data["keys"] = sorted(data["keys"], key=get_balance_val)
+    
+    # 性能优化：前端保存设置时，同步更新内存缓存，确保下一次 API 请求用的是最新数据
+    _MEM_CACHE = data 
+    
     json_str = json.dumps(data, indent=2, ensure_ascii=False)
     
     if CRYPTO_AVAILABLE and os.path.exists(ENCRYPT_KEY_FILE):
