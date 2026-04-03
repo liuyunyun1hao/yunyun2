@@ -29,7 +29,7 @@ pkg update -y && pkg install -y git python nodejs python-cryptography
 使用 GitHub 镜像节点拉取代码，防止网络问题导致拉取失败或找不到文件夹。
 
 ```bash
-cd ~ && git clone [https://github.com/liuyunyun1hao/yunyun2.git](https://github.com/liuyunyun1hao/yunyun2.git)
+cd ~ && git clone https://github.com/liuyunyun1hao/yunyun2.git
 ```
 
 第三步：安装剩余的 Python 轻量依赖
