@@ -4,4 +4,4 @@ Werkzeug==2.3.7
 requests==2.31.0
 cryptography==41.0.7
 waitress==2.1.2
-setuptools==70.0.0  # 解决pkg_resources问题
+setuptools==70.0.0
