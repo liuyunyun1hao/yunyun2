@@ -1,0 +1,54 @@
+# Render 配置文件
+# 用于一键部署 YunYun AI 代理服务
+
+services:
+  # 主Web服务
+  - type: web
+    name: yunyun-proxy
+    runtime: python
+    region: singapore  # 建议使用新加坡区域，连接中国更稳定
+    plan: free  # 免费套餐
+    
+    # 构建配置
+    buildCommand: pip install -r requirements.txt
+    startCommand: python proxy_server_render.py
+    
+    # 自动部署
+    autoDeploy: true
+    branch: main
+    
+    # 环境变量 (会在部署时要求设置)
+    envVars:
+      # 基础认证配置
+      - key: REQUIRE_AUTH
+        value: true
+        description: "是否要求认证访问"
+        
+      - key: AUTH_USERNAME  
+        value: admin
+        description: "管理界面用户名"
+        
+      - key: AUTH_PASSWORD
+        generateValue: true  # Render会自动生成随机密码
+        description: "管理界面密码，请保存好"
+        
+      # API配置
+      - key: API_BASE
+        value: https://api.siliconflow.cn/v1
+        description: "硅基流动API地址"
+        
+      # 安全配置
+      - key: ENCRYPT_ENABLED
+        value: true
+        description: "启用API密钥加密存储"
+        
+      # 性能配置  
+      - key: REQUEST_TIMEOUT
+        value: 30
+        description: "请求超时时间（秒）"
+
+# 说明：
+# 1. 将本项目上传到GitHub
+# 2. 在Render中导入此配置文件
+# 3. Render会自动创建服务并设置环境变量
+# 4. 部署完成后会提供一个免费域名
