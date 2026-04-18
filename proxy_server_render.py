@@ -540,30 +540,5 @@ def mask_key(key):
     return key[:5] + "..." + key[-4:]
 
 # ========== 启动应用 ==========
-if __name__ == "__main__":
-    logger.info(f"启动 YunYun AI 代理服务 v{VERSION}")
-    logger.info(f"API基础地址: {API_BASE}")
-    logger.info(f"端口: {PORT}")
-    logger.info(f"认证要求: {REQUIRE_AUTH}")
-    
-    if REQUIRE_AUTH:
-        if USE_API_KEY_AUTH:
-            if API_KEY:
-                logger.info(f"API密钥认证已启用")
-            else:
-                logger.warning("API_KEY未设置，即使REQUIRE_AUTH=true也无法进行API密钥认证")
-        else:
-            if AUTH_PASSWORD:
-                logger.info(f"基础认证已启用，用户名: {AUTH_USERNAME}")
-            else:
-                logger.warning("AUTH_PASSWORD未设置，即使REQUIRE_AUTH=true也无法进行基础认证")
-    
-    # 启动Flask应用
-    # 在生产环境中使用Waitress，开发环境中使用Flask自带的服务器
-    if os.environ.get("ENVIRONMENT") == "production":
-        from waitress import serve
-        logger.info(f"生产环境启动，使用Waitress服务器")
-        serve(app, host="0.0.0.0", port=PORT)
-    else:
-        logger.info(f"开发环境启动，使用Flask开发服务器")
-        app.run(host="0.0.0.0", port=PORT, debug=False)
+# 注意：这个文件现在是模块，通过app.py启动
+# 请不要直接运行此文件

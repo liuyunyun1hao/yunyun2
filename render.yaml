@@ -9,9 +9,46 @@ services:
     region: singapore  # 建议使用新加坡区域，连接中国更稳定
     plan: free  # 免费套餐
     
+services:
+  # 主Web服务
+  - type: web
+    name: yunyun-proxy
+    runtime: python
+    region: singapore
+    plan: free
+    
     # 构建配置
     buildCommand: pip install -r requirements.txt
-    startCommand: python app.py
+    startCommand: python app.py  # 直接运行Python脚本
+    
+    # 自动部署
+    autoDeploy: true
+    branch: main
+    
+    # 环境变量
+    envVars:
+      # 基础认证配置
+      - key: REQUIRE_AUTH
+        value: "true"
+        description: "是否要求认证访问"
+        
+      - key: AUTH_USERNAME  
+        value: "admin"
+        description: "管理界面用户名"
+        
+      - key: AUTH_PASSWORD
+        generateValue: true
+        description: "管理界面密码，请保存好"
+        
+      # API配置
+      - key: API_BASE
+        value: "https://api.siliconflow.cn/v1"
+        description: "硅基流动API地址"
+        
+      # 安全配置
+      - key: ENCRYPT_ENABLED
+        value: "true"
+        description: "启用API密钥加密存储"
     
     # 自动部署
     autoDeploy: true
