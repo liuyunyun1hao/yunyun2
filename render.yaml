@@ -11,7 +11,7 @@ services:
     
     # 构建配置
     buildCommand: pip install -r requirements.txt
-    startCommand: python proxy_server_render.py
+    startCommand: python app.py
     
     # 自动部署
     autoDeploy: true
