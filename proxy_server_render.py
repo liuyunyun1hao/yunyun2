@@ -269,7 +269,11 @@ def check_auth():
 def index():
     """主页面 - 显示管理界面"""
     if not check_auth():
-        return "Unauthorized", 401
+        return Response(
+            "请输入用户名和密码登录",
+            401,
+            {"WWW-Authenticate": 'Basic realm="YunYun Proxy - 请登录"'}
+        )
     
     # 简化的管理界面
     html_content = """
